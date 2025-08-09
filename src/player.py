@@ -64,7 +64,6 @@ class PlayerAnimator:
         
         return self.sprites[self.current_direction][frame_number]
 
-
 def player_move(player_pos, dt, collision_rects, player_size=(16, 16)):
     keys = pygame.key.get_pressed()
     

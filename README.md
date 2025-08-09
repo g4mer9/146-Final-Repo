@@ -1,12 +1,17 @@
 # 146 Final: Stealth Game Prototype
+## Riley Fink, Kailey Herrman, Hojoun Yoon, Valentina Serrano
 
 my environment: venv on python 3.13
+
+===========================================================
 
 prerequisites: 
 
 pygame - (pip install pygame)
 
 pytmx - (pip install pytmx)
+
+===========================================================
 
 run game with:
 
