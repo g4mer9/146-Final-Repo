@@ -16,17 +16,17 @@ def load_tileset(filename, tile_size):
     sprite_group = pygame.sprite.Group()
     collision_tiles = []
 
-    print(f"Loading tileset from {filename}")
+    # print(f"Loading tileset from {filename}")
     
-    # debug tileset information
-    for tileset in tmx_data.tilesets:
-        print(f"Tileset '{tileset.name}': firstgid={tileset.firstgid}")
+    # # debug tileset information
+    # for tileset in tmx_data.tilesets:
+    #     print(f"Tileset '{tileset.name}': firstgid={tileset.firstgid}")
     
     # get all collision data once
     try:
         colliders_gen = tmx_data.get_tile_colliders()
         all_colliders = list(colliders_gen)
-        print(f"Found collision data for {len(all_colliders)} tiles")
+        # print(f"Found collision data for {len(all_colliders)} tiles")
     except Exception as e:
         print(f"Error getting colliders: {e}")
         all_colliders = []
@@ -69,10 +69,10 @@ def load_tileset(filename, tile_size):
                                 collision_tiles.append(collision_rect)
                                 collision_count += 1
                         
-            if collision_count > 0:
-                print(f"Layer '{layer.name}' loaded {collision_count} collision objects")
+            # if collision_count > 0:
+            #     print(f"Layer '{layer.name}' loaded {collision_count} collision objects")
             
-    print(f"Total collision rectangles: {len(collision_tiles)}")
+    # print(f"Total collision rectangles: {len(collision_tiles)}")
     
     for obj in tmx_data.objects:
         pos = obj.x, obj.y
