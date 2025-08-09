@@ -14,19 +14,75 @@ class Tile(pygame.sprite.Sprite):
 def load_tileset(filename, tile_size):
     tmx_data = load_pygame(filename)
     sprite_group = pygame.sprite.Group()
+    collision_tiles = []
+
+    print(f"Loading tileset from {filename}")
+    
+    # debug tileset information
+    for tileset in tmx_data.tilesets:
+        print(f"Tileset '{tileset.name}': firstgid={tileset.firstgid}")
+    
+    # get all collision data once
+    try:
+        colliders_gen = tmx_data.get_tile_colliders()
+        all_colliders = list(colliders_gen)
+        print(f"Found collision data for {len(all_colliders)} tiles")
+    except Exception as e:
+        print(f"Error getting colliders: {e}")
+        all_colliders = []
+
+    # create a lookup table for collision data by tile GID
+    # this automatically works with any tiles that have collision objects defined in the TSX
+    collision_lookup = {}
+    for tile_id, object_group in all_colliders:
+        collision_objects = []
+        if hasattr(object_group, '__iter__'):
+            for obj in object_group:
+                if hasattr(obj, 'x') and hasattr(obj, 'y') and hasattr(obj, 'width') and hasattr(obj, 'height'):
+                    collision_objects.append(obj)
+        if collision_objects:
+            collision_lookup[tile_id] = collision_objects
+
     for layer in tmx_data.visible_layers:
         if hasattr(layer, 'data'):
+            collision_count = 0
+            gids_in_layer = set()
             for x, y, image in layer.tiles():
-                pos = (x * tile_size, y * tile_size)
-                Tile(pos=pos, image=image, groups=sprite_group)
+                if image:  # only process non-empty tiles
+                    pos = (x * tile_size, y * tile_size)
+                    tile = Tile(pos=pos, image=image, groups=sprite_group)
+                    
+                    # get the tile GID from the layer data
+                    gid = layer.data[y][x] if y < len(layer.data) and x < len(layer.data[y]) else 0
+                    if gid > 0:
+                        gids_in_layer.add(gid)
+                        if gid in collision_lookup:
+                            # process collision objects for this tile
+                            for obj in collision_lookup[gid]:
+                                # convert tile-relative coordinates to world coordinates
+                                collision_rect = pygame.Rect(
+                                    pos[0] + obj.x,
+                                    pos[1] + obj.y,
+                                    obj.width,
+                                    obj.height
+                                )
+                                collision_tiles.append(collision_rect)
+                                collision_count += 1
+                        
+            if collision_count > 0:
+                print(f"Layer '{layer.name}' loaded {collision_count} collision objects")
+            
+    print(f"Total collision rectangles: {len(collision_tiles)}")
+    
     for obj in tmx_data.objects:
         pos = obj.x, obj.y
         if (obj.type in 'Items'):
             Tile(pos=pos, image=obj.image, groups=sprite_group)
+        if (hasattr(obj, 'properties') and obj.properties.get('collision', False)):
+            collision_tiles.append(pygame.Rect(obj.x, obj.y, obj.width, obj.height))
+    return tmx_data, sprite_group, collision_tiles
 
-    return tmx_data, sprite_group
-
-def draw_background(screen, tmx_data):
+def draw_objs(screen, tmx_data):
     if(tmx_data):
         for obj in tmx_data.objects:
             pos = obj.x,obj.y

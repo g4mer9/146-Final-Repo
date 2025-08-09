@@ -13,8 +13,8 @@
  </tile>
  <tile id="56">
   <objectgroup draworder="index" id="3">
-   <object id="7" x="0" y="12" width="16.0909" height="4"/>
-   <object id="8" x="13" y="0.181818" width="3.09091" height="15.8182"/>
+   <object id="7" x="0.0790514" y="11.9091" width="14.9605" height="4"/>
+   <object id="8" x="12.8142" y="0.0434783" width="3.09091" height="15.0791"/>
   </objectgroup>
  </tile>
 </tileset>

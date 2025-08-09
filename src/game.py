@@ -19,7 +19,7 @@ player_pos = pygame.Vector2(screen.get_width() // 2, screen.get_height() // 2)
 
 sprite_group = pygame.sprite.Group()
 
-tmx_data, sprite_group = tiles.load_tileset('./data/tmx/untitled.tmx', 16)
+tmx_data, sprite_group, collision_rects = tiles.load_tileset('./data/tmx/untitled.tmx', 16)
 
 # tiles.debug_tileset(tmx_data)
 
@@ -35,15 +35,16 @@ while running:
 
     #draw background
     sprite_group.draw(screen)
-    tiles.draw_background(screen, tmx_data)
+    tiles.draw_objs(screen, tmx_data)
 
-    # draw player at current player_pos
-    pygame.draw.circle(screen, (255, 0, 0), player_pos, player.radius)
+    #draw player
+    image = pygame.image.load('./data/sprites/player.png').convert_alpha()
+    screen.blit(image, player_pos)
 
     # quit game check
     running = player.quit_check(running)
     # move player based on input
-    player.player_move(player_pos, dt)
+    player.player_move(player_pos, dt, collision_rects)
 
     # draw new frame
     pygame.display.flip()
