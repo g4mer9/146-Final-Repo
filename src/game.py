@@ -38,7 +38,7 @@ while running:
 
     #draw background
     sprite_group.draw(screen)
-    tiles.draw_objs(screen, tmx_data)
+    # tiles.draw_objs(screen, tmx_data)
 
     # quit game check
     running = player.quit_check(running)

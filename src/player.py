@@ -64,26 +64,7 @@ class PlayerAnimator:
         
         return self.sprites[self.current_direction][frame_number]
 
-def player_move(player_pos, dt, collision_rects, player_size=(16, 16)):
-    keys = pygame.key.get_pressed()
-    
-    # store original position
-    original_x = player_pos.x
-    original_y = player_pos.y
-    
-    # calculate movement deltas
-    dx = 0
-    dy = 0
-    
-    if keys[pygame.K_LEFT]:
-        dx -= speed * dt
-    if keys[pygame.K_RIGHT]:
-        dx += speed * dt
-    if keys[pygame.K_UP]:
-        dy -= speed * dt
-    if keys[pygame.K_DOWN]:
-        dy += speed * dt
-    
+def handle_collisions(dx, dy, player_pos, player_size, collision_rects):
     # handle horizontal movement first
     if dx != 0:
         player_pos.x += dx
@@ -123,6 +104,30 @@ def player_move(player_pos, dt, collision_rects, player_size=(16, 16)):
         
         if collision_found:
             player_pos.y = closest_y
+
+    return player_pos
+
+def player_move(player_pos, dt, collision_rects, player_size=(16, 16)):
+    keys = pygame.key.get_pressed()
+    
+    # store original position
+    original_x = player_pos.x
+    original_y = player_pos.y
+    
+    # calculate movement deltas
+    dx = 0
+    dy = 0
+    
+    if keys[pygame.K_LEFT]:
+        dx -= speed * dt
+    if keys[pygame.K_RIGHT]:
+        dx += speed * dt
+    if keys[pygame.K_UP]:
+        dy -= speed * dt
+    if keys[pygame.K_DOWN]:
+        dy += speed * dt
+    
+    player_pos = handle_collisions(dx, dy, player_pos, player_size, collision_rects)
     
     # return the actual movement that occurred
     actual_dx = player_pos.x - original_x

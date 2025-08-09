@@ -1,7 +1,7 @@
 import pygame, sys
 from pytmx.util_pygame import load_pygame
 
-# from very helpful youtube tutorial:
+# built off code from very helpful youtube tutorial:
 # https://www.youtube.com/watch?v=N6xqCwblyiw
 # https://pastebin.com/dEUVdNip
 
@@ -82,24 +82,25 @@ def load_tileset(filename, tile_size):
             collision_tiles.append(pygame.Rect(obj.x, obj.y, obj.width, obj.height))
     return tmx_data, sprite_group, collision_tiles
 
-def draw_objs(screen, tmx_data):
-    if(tmx_data):
-        for obj in tmx_data.objects:
-            pos = obj.x,obj.y
-            if obj.type == 'Shape':
-                if obj.name == 'Marker':
-                    pygame.draw.circle(screen,'red',(obj.x,obj.y),5)
-                if obj.name == 'Rectangle':
-                    rect = pygame.Rect(obj.x,obj.y,obj.width,obj.height)
-                    pygame.draw.rect(screen,'yellow',rect)
+# example code for if there is an object layer
+# def draw_objs(screen, tmx_data):
+#     if(tmx_data):
+#         for obj in tmx_data.objects:
+#             pos = obj.x,obj.y
+#             if obj.type == 'Shape':
+#                 if obj.name == 'Marker':
+#                     pygame.draw.circle(screen,'red',(obj.x,obj.y),5)
+#                 if obj.name == 'Rectangle':
+#                     rect = pygame.Rect(obj.x,obj.y,obj.width,obj.height)
+#                     pygame.draw.rect(screen,'yellow',rect)
     
-                if obj.name == 'Ellipse':
-                    rect = pygame.Rect(obj.x,obj.y,obj.width,obj.height)
-                    pygame.draw.ellipse(screen,'blue',rect)
+#                 if obj.name == 'Ellipse':
+#                     rect = pygame.Rect(obj.x,obj.y,obj.width,obj.height)
+#                     pygame.draw.ellipse(screen,'blue',rect)
     
-                if obj.name == 'Polygon':
-                    points = [(point.x,point.y) for point in obj.points]
-                    pygame.draw.polygon(screen,'green',points)
+#                 if obj.name == 'Polygon':
+#                     points = [(point.x,point.y) for point in obj.points]
+#                     pygame.draw.polygon(screen,'green',points)
 
 def debug_tileset(tmx_data):
     # get layers 
