@@ -17,6 +17,9 @@ dt = 0
 # player spawn in middle of screen on startup
 player_pos = pygame.Vector2(screen.get_width() // 2, screen.get_height() // 2)
 
+# initialize player animator
+player_animator = player.PlayerAnimator()
+
 sprite_group = pygame.sprite.Group()
 
 tmx_data, sprite_group, collision_rects = tiles.load_tileset('./data/tmx/untitled.tmx', 16)
@@ -37,14 +40,18 @@ while running:
     sprite_group.draw(screen)
     tiles.draw_objs(screen, tmx_data)
 
-    #draw player
-    image = pygame.image.load('./data/sprites/player.png').convert_alpha()
-    screen.blit(image, player_pos)
-
     # quit game check
     running = player.quit_check(running)
-    # move player based on input
-    player.player_move(player_pos, dt, collision_rects)
+    
+    # move player based on input and get movement deltas
+    dx, dy = player.player_move(player_pos, dt, collision_rects)
+    
+    # update player animation
+    player_animator.update(dt, dx, dy)
+    
+    #draw player with current animated sprite
+    current_sprite = player_animator.get_current_sprite()
+    screen.blit(current_sprite, player_pos)
 
     # draw new frame
     pygame.display.flip()
