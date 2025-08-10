@@ -93,7 +93,7 @@ def load_tileset(filename, tile_size):
         items_layer = tmx_data.get_layer_by_name('Items')
         if items_layer:
             for obj in items_layer:
-                if hasattr(obj, 'gid') and obj.gid:  # gid is the tile ID
+                if hasattr(obj, 'gid') and obj.gid:  # tile objects with gid
                     # get the image for this tile
                     tile_image = tmx_data.get_tile_image_by_gid(obj.gid)
                     if tile_image:
@@ -105,8 +105,25 @@ def load_tileset(filename, tile_size):
                             'rect': pygame.Rect(obj.x, obj.y, obj.width, obj.height)
                         }
                         items.append(item_data)
+                        # print(f"Loaded tile item: name='{item_data['name']}', pos={item_data['pos']}, gid={obj.gid}")
+                elif hasattr(obj, 'name') and obj.name:  # rectangle objects with names
+                    # create a placeholder image for rectangle objects
+                    placeholder_image = pygame.Surface((obj.width, obj.height), pygame.SRCALPHA)
+                    placeholder_image.fill((0, 0, 0, 0))  # semi-transparent green
+                    
+                    item_data = {
+                        'pos': (obj.x, obj.y),
+                        'image': placeholder_image,
+                        'name': obj.name,
+                        'tile_id': 0,  # no tile ID for rectangles
+                        'rect': pygame.Rect(obj.x, obj.y, obj.width, obj.height)
+                    }
+                    items.append(item_data)
+                    # print(f"Loaded rectangle item: name='{item_data['name']}', pos={item_data['pos']}, size=({obj.width}x{obj.height})")
     except Exception as e:
         print(f"Error processing Items layer: {e}")
+    
+    # print(f"Total items loaded: {len(items)}")  # Summary of items loaded
     
     # create pyscroll map data
     map_data = pyscroll.TiledMapData(tmx_data)

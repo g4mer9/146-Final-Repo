@@ -11,6 +11,7 @@ class Player(pygame.sprite.Sprite):
         self.position = pygame.Vector2(position)  # use float position for smooth movement
         self.moveable = True  # flag to check if player can move
         self.box = False  # flag to check if player is in a box
+        self.trees = False  # flag to check if player is in trees
         self.speed_modifier = 1.0  # speed modifier for different terrain types
         
         # box animation variables
@@ -19,7 +20,7 @@ class Player(pygame.sprite.Sprite):
         self.box_animation_stage = 0  # 0: box_open, 1: box_middle, 2: box_closed0
         self.box_animation_speed = 0.3  # time for each stage in seconds
         
-    def update(self, dt, collision_rects):
+    def update(self, dt, collision_rects, overlapping_trees=False):
         # handle box animation if active
         if self.box_animation_active:
             self.box_animation_timer += dt
@@ -40,14 +41,14 @@ class Player(pygame.sprite.Sprite):
             return 0, 0  # no movement during animation
         
         # handle input and movement
-        dx, dy = self.handle_input(dt, collision_rects)
+        dx, dy = self.handle_input(dt, collision_rects, overlapping_trees)
         
-        # update animation (always update for timing, regardless of box state)
+        # update animation (always update for timing, regardless of box/trees state)
         self.animator.update(dt, dx, dy, self.box)
         
         # get the appropriate sprite based on current state
         if not self.box_animation_active:
-            self.image = self.animator.get_current_sprite(self.box)
+            self.image = self.animator.get_current_sprite(self.box, self.trees)
         
         return dx, dy
     
@@ -55,9 +56,25 @@ class Player(pygame.sprite.Sprite):
         """Set the speed modifier for different terrain types"""
         self.speed_modifier = modifier
     
-    def handle_input(self, dt, collision_rects):
+    def handle_input(self, dt, collision_rects, overlapping_trees=False):
         
         keys = pygame.key.get_pressed()
+        
+        # handle Z key for box and trees interaction
+        if keys[pygame.K_z]:
+            if self.box:
+                self.box = False
+            elif overlapping_trees and not self.trees:
+                # enter trees when Z is held and overlapping trees
+                self.enter_trees()
+        else:
+            # exit trees when Z key is released
+            if self.trees:
+                self.exit_trees()
+        
+        # if player is not moveable, don't process movement input
+        if not self.moveable:
+            return 0, 0
         
         # store original position
         original_x = self.position.x
@@ -79,10 +96,6 @@ class Player(pygame.sprite.Sprite):
         if keys[pygame.K_DOWN]:
             dy += current_speed * dt
         
-        # check for Z key press to exit box mode
-        if keys[pygame.K_z]:
-            self.box = False
-        
         # handle collisions and update position
         self.handle_collisions(dx, dy, collision_rects)
         
@@ -92,8 +105,6 @@ class Player(pygame.sprite.Sprite):
         # return the actual movement that occurred
         actual_dx = self.position.x - original_x
         actual_dy = self.position.y - original_y
-        if(not self.moveable):
-            return 0, 0
         return actual_dx, actual_dy
     
     def handle_collisions(self, dx, dy, collision_rects):
@@ -159,6 +170,15 @@ class Player(pygame.sprite.Sprite):
         self.box = False
         # sprite will automatically switch back to normal player sprite
         # through the animator's get_current_sprite method
+    
+    def enter_trees(self):
+        if not self.trees and not self.box:  # only enter if not already in trees or box
+            self.trees = True
+            self.moveable = False
+    
+    def exit_trees(self):
+        self.trees = False
+        self.moveable = True
 
 class PlayerAnimator:
     def __init__(self):
@@ -229,8 +249,13 @@ class PlayerAnimator:
                 self.animation_timer = 0.0
                 self.current_frame_index = (self.current_frame_index + 1) % len(self.animation_sequence)
     
-    def get_current_sprite(self, is_in_box=False):
-        if is_in_box:
+    def get_current_sprite(self, is_in_box=False, is_in_trees=False):
+        if is_in_trees:
+            # create a transparent sprite when in trees
+            transparent_sprite = pygame.Surface((16, 16), pygame.SRCALPHA)
+            transparent_sprite.fill((0, 0, 0, 0))  # completely transparent
+            return transparent_sprite
+        elif is_in_box:
             # if in box mode, alternate between closed0 and closed1 when moving
             if self.is_moving:
                 # alternate between closed0 and closed1

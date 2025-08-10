@@ -15,6 +15,9 @@ running = True
 # FPS counter setup
 font = pygame.font.Font(None, 18)
 fps_counter_color = (255, 255, 255)  # white text
+z_button_ui = pygame.image.load('data/sprites/Z.png').convert_alpha()
+box_open_ui = pygame.image.load('data/sprites/box_open.png').convert_alpha()
+trees_ui = pygame.image.load('data/sprites/trees.png').convert_alpha()
 
 # delta time, used for frame-rate independent physics
 dt = 0
@@ -55,6 +58,9 @@ camera_group.add(game_player, layer=2)
 # Center camera on player initially
 camera_group.center(game_player.rect.center)
 
+# tracking variables
+overlapping_trees = False
+
 # tiles.debug_tileset(tmx_data)
 
 # MAIN LOOP =========================================================================================================================================
@@ -72,7 +78,7 @@ while running:
     current_tile_id = tiles.get_tile_id_at_position(tmx_data, player_center_x, player_center_y, 16)
     
     # adjust player speed based on tile ID
-    slow_tiles = {2, 4, 5, 6, 7}
+    slow_tiles = {3, 4, 5, 6, 7, 8}
     if current_tile_id in slow_tiles:
         if(game_player.box):
             game_player.set_speed_modifier(0.25) #quarter speed
@@ -87,19 +93,26 @@ while running:
             game_player.set_speed_modifier(1.0)  # normal speed
     
     # update player (handles movement, collisions, and animation)
-    dx, dy = game_player.update(dt, collision_rects)
+    # pass the overlapping_trees state to the player
+    dx, dy = game_player.update(dt, collision_rects, overlapping_trees)
     
-    # check for item collisions (specifically open_box)
+    # check for item collisions (open_box and trees)
     player_rect = game_player.rect
     items_to_remove = []
+    overlapping_trees = False  # reset tree overlap state each frame
+    
     for item in items_group:
         if item.item_name == 'open_box':  # check for open_box specifically
             if player_rect.colliderect(item.rect):
                 print(f"Player is touching the open_box at position ({item.rect.x}, {item.rect.y})")
-                # Call the new function to handle box interaction
+                # Call the function to handle box interaction
                 game_player.enter_box()
                 # Mark item for removal
                 items_to_remove.append(item)
+        elif item.item_name == 'trees' or item.item_name.startswith('item_') and 'tree' in item.item_name.lower():  # check for trees specifically or items with 'tree' in name
+            if player_rect.colliderect(item.rect):
+                # Set overlap state instead of entering trees
+                overlapping_trees = True
     
     # remove items that were interacted with
     for item in items_to_remove:
@@ -117,6 +130,13 @@ while running:
     fps = clock.get_fps()
     fps_text = font.render(f"FPS: {fps:.1f}", True, fps_counter_color)
     screen.blit(fps_text, (10, 10))
+    screen.blit(z_button_ui, (30, 30))  # draw Z button UI
+    if overlapping_trees:
+        screen.blit(trees_ui, (30, 50))
+    elif game_player.box:
+        screen.blit(box_open_ui, (30, 50))
+    
+
 
     # draw new frame
     pygame.display.flip()
