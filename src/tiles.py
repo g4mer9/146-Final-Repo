@@ -1,5 +1,6 @@
 import pygame, sys
 from pytmx.util_pygame import load_pygame
+import pyscroll
 
 # built off code from very helpful youtube tutorial:
 # https://www.youtube.com/watch?v=N6xqCwblyiw
@@ -10,11 +11,20 @@ class Tile(pygame.sprite.Sprite):
         super().__init__(groups)
         self.image = image
         self.rect = self.image.get_rect(topleft=pos)
+        # i think later we can plug in cost for A* right here
+
+class Item(pygame.sprite.Sprite):
+    def __init__(self, pos, image, item_name, tile_id, groups):
+        super().__init__(groups)
+        self.image = image
+        self.rect = self.image.get_rect(topleft=pos)
+        self.item_name = item_name
+        self.tile_id = tile_id
 
 def load_tileset(filename, tile_size):
     tmx_data = load_pygame(filename)
-    sprite_group = pygame.sprite.Group()
     collision_tiles = []
+    items = []
 
     # print(f"Loading tileset from {filename}")
     
@@ -50,7 +60,6 @@ def load_tileset(filename, tile_size):
             for x, y, image in layer.tiles():
                 if image:  # only process non-empty tiles
                     pos = (x * tile_size, y * tile_size)
-                    tile = Tile(pos=pos, image=image, groups=sprite_group)
                     
                     # get the tile GID from the layer data
                     gid = layer.data[y][x] if y < len(layer.data) and x < len(layer.data[y]) else 0
@@ -76,31 +85,52 @@ def load_tileset(filename, tile_size):
     
     for obj in tmx_data.objects:
         pos = obj.x, obj.y
-        if (obj.type in 'Items'):
-            Tile(pos=pos, image=obj.image, groups=sprite_group)
         if (hasattr(obj, 'properties') and obj.properties.get('collision', False)):
             collision_tiles.append(pygame.Rect(obj.x, obj.y, obj.width, obj.height))
-    return tmx_data, sprite_group, collision_tiles
+    
+    # process items from the 'Items' object layer
+    try:
+        items_layer = tmx_data.get_layer_by_name('Items')
+        if items_layer:
+            for obj in items_layer:
+                if hasattr(obj, 'gid') and obj.gid:  # gid is the tile ID
+                    # get the image for this tile
+                    tile_image = tmx_data.get_tile_image_by_gid(obj.gid)
+                    if tile_image:
+                        item_data = {
+                            'pos': (obj.x, obj.y),
+                            'image': tile_image,
+                            'name': getattr(obj, 'name', f'item_{obj.gid}'),
+                            'tile_id': obj.gid,
+                            'rect': pygame.Rect(obj.x, obj.y, obj.width, obj.height)
+                        }
+                        items.append(item_data)
+    except Exception as e:
+        print(f"Error processing Items layer: {e}")
+    
+    # create pyscroll map data
+    map_data = pyscroll.TiledMapData(tmx_data)
+    
+    return tmx_data, map_data, collision_tiles, items
 
-# example code for if there is an object layer
-# def draw_objs(screen, tmx_data):
-#     if(tmx_data):
-#         for obj in tmx_data.objects:
-#             pos = obj.x,obj.y
-#             if obj.type == 'Shape':
-#                 if obj.name == 'Marker':
-#                     pygame.draw.circle(screen,'red',(obj.x,obj.y),5)
-#                 if obj.name == 'Rectangle':
-#                     rect = pygame.Rect(obj.x,obj.y,obj.width,obj.height)
-#                     pygame.draw.rect(screen,'yellow',rect)
+def get_tile_id_at_position(tmx_data, x, y, tile_size=16):
+    """Get the tile ID at a specific world position"""
+    # convert world coordinates to tile coordinates
+    tile_x = int(x // tile_size)
+    tile_y = int(y // tile_size)
     
-#                 if obj.name == 'Ellipse':
-#                     rect = pygame.Rect(obj.x,obj.y,obj.width,obj.height)
-#                     pygame.draw.ellipse(screen,'blue',rect)
+    # look through visible layers to find background tiles
+    for layer in tmx_data.visible_layers:
+        if hasattr(layer, 'data'):
+            # check if the tile coordinates are within bounds
+            if (0 <= tile_y < len(layer.data) and 
+                0 <= tile_x < len(layer.data[tile_y])):
+                gid = layer.data[tile_y][tile_x]
+                if gid > 0:  # non-empty tile
+                    return gid
     
-#                 if obj.name == 'Polygon':
-#                     points = [(point.x,point.y) for point in obj.points]
-#                     pygame.draw.polygon(screen,'green',points)
+    return 0  # return 0 if no tile found
+
 
 def debug_tileset(tmx_data):
     # get layers 

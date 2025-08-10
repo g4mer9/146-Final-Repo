@@ -1,28 +1,59 @@
 import pygame
 import player
 import tiles
+import pyscroll
 
 # INITIALIZATIONS ====================================================================================================================================
 
 pygame.init()
 # screen dimensions
 flags = pygame.SCALED | pygame.FULLSCREEN
-screen = pygame.display.set_mode((848, 480), flags)
+screen = pygame.display.set_mode((424, 240), flags)
 clock = pygame.time.Clock()
 running = True
+
+# FPS counter setup
+font = pygame.font.Font(None, 18)
+fps_counter_color = (255, 255, 255)  # white text
 
 # delta time, used for frame-rate independent physics
 dt = 0
 
-# player spawn in middle of screen on startup
-player_pos = pygame.Vector2(screen.get_width() // 2, screen.get_height() // 2)
+# load tileset and create pyscroll map
+tmx_data, map_data, collision_rects, items_data = tiles.load_tileset('data/tmx/untitled.tmx', 16)
 
-# initialize player animator
-player_animator = player.PlayerAnimator()
+# create the scrolling map layer
+map_layer = pyscroll.BufferedRenderer(
+    data=map_data,
+    size=screen.get_size()
+)
 
-sprite_group = pygame.sprite.Group()
+# create the pyscroll group (like a camera)
+camera_group = pyscroll.PyscrollGroup(map_layer=map_layer, default_layer=1)
 
-tmx_data, sprite_group, collision_rects = tiles.load_tileset('./data/tmx/untitled.tmx', 16)
+# create item sprites group
+items_group = pygame.sprite.Group()
+
+# create item sprites from items data
+for item_data in items_data:
+    item_sprite = tiles.Item(
+        pos=item_data['pos'],
+        image=item_data['image'],
+        item_name=item_data['name'],
+        tile_id=item_data['tile_id'],
+        groups=[items_group]  # only add to items_group initially
+    )
+    # add to camera group on layer 0 (below player)
+    camera_group.add(item_sprite, layer=0)
+
+# create player and add to camera group
+player_start_pos = (screen.get_width() // 2, screen.get_height() // 2)
+game_player = player.Player(player_start_pos)
+# add player to camera group on layer 2 (above items)
+camera_group.add(game_player, layer=2)
+
+# Center camera on player initially
+camera_group.center(game_player.rect.center)
 
 # tiles.debug_tileset(tmx_data)
 
@@ -33,25 +64,59 @@ while running:
         if event.type == pygame.QUIT:
             running = False
 
-    # wipe previous frame
-    screen.fill((0, 0, 0))
-
-    #draw background
-    sprite_group.draw(screen)
-    # tiles.draw_objs(screen, tmx_data)
-
     # quit game check
     running = player.quit_check(running)
     
-    # move player based on input and get movement deltas
-    dx, dy = player.player_move(player_pos, dt, collision_rects)
+    # check what tile the player is standing on and adjust speed
+    player_center_x, player_center_y = game_player.rect.center
+    current_tile_id = tiles.get_tile_id_at_position(tmx_data, player_center_x, player_center_y, 16)
     
-    # update player animation
-    player_animator.update(dt, dx, dy)
+    # adjust player speed based on tile ID
+    slow_tiles = {2, 4, 5, 6, 7}
+    if current_tile_id in slow_tiles:
+        if(game_player.box):
+            game_player.set_speed_modifier(0.25) #quarter speed
+        else: 
+            game_player.set_speed_modifier(0.5)  # half speed
+        # Debug: uncomment the line below to see when you're on a slow tile
+        # print(f"On slow tile {current_tile_id}, speed halved")
+    else:
+        if(game_player.box):
+            game_player.set_speed_modifier(0.5)  # half
+        else:
+            game_player.set_speed_modifier(1.0)  # normal speed
     
-    #draw player with current animated sprite
-    current_sprite = player_animator.get_current_sprite()
-    screen.blit(current_sprite, player_pos)
+    # update player (handles movement, collisions, and animation)
+    dx, dy = game_player.update(dt, collision_rects)
+    
+    # check for item collisions (specifically open_box)
+    player_rect = game_player.rect
+    items_to_remove = []
+    for item in items_group:
+        if item.item_name == 'open_box':  # check for open_box specifically
+            if player_rect.colliderect(item.rect):
+                print(f"Player is touching the open_box at position ({item.rect.x}, {item.rect.y})")
+                # Call the new function to handle box interaction
+                game_player.enter_box()
+                # Mark item for removal
+                items_to_remove.append(item)
+    
+    # remove items that were interacted with
+    for item in items_to_remove:
+        items_group.remove(item)
+        camera_group.remove(item)
+    
+    # center camera on player
+    camera_group.center(game_player.rect.center)
+    
+    # draw everything (map and sprites)
+    # Note: no need to fill screen, pyscroll handles clearing
+    camera_group.draw(screen)
+
+    # draw FPS counter
+    fps = clock.get_fps()
+    fps_text = font.render(f"FPS: {fps:.1f}", True, fps_counter_color)
+    screen.blit(fps_text, (10, 10))
 
     # draw new frame
     pygame.display.flip()

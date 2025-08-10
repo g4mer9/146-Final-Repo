@@ -1,0 +1,13 @@
+tech used:
+github copilot
+pygame
+pyscroll
+pytmx
+
+code from:
+https://www.youtube.com/watch?v=N6xqCwblyiw
+https://pastebin.com/dEUVdNip
+https://github.com/bitcraft/pyscroll
+https://github.com/bitcraft/pyscroll/wiki/Tutorial
+http://pygametutorials.wikidot.com/tutorials-basic
+https://pytmx.readthedocs.io/en/latest/
