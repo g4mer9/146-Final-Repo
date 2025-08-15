@@ -21,6 +21,11 @@ box_open_ui = pygame.image.load('data/sprites/box_open.png').convert_alpha()
 trees_ui = pygame.image.load('data/sprites/trees.png').convert_alpha()
 bottle_ui = pygame.image.load('data/sprites/bottle_up.png').convert_alpha()
 book_ui = pygame.image.load('data/sprites/book.png').convert_alpha()
+locker_ui = pygame.image.load('data/sprites/locker_closed.png').convert_alpha()
+
+# load locker sprites for animation
+locker_closed_sprite = pygame.image.load('data/sprites/locker_closed.png').convert_alpha()
+locker_open_sprite = pygame.image.load('data/sprites/locker_open.png').convert_alpha()
 
 # delta time, used for frame-rate independent physics
 dt = 0
@@ -67,6 +72,8 @@ camera_group.center(game_player.rect.center)
 
 # tracking variables
 overlapping_trees = False
+overlapping_locker = False
+animating_locker_item = None
 
 # tiles.debug_tileset(tmx_data)
 
@@ -97,9 +104,41 @@ while running:
         else:
             game_player.set_speed_modifier(1.0)  # normal speed
     
+    # check for overlapping items first (before player update)
+    player_rect = game_player.rect
+    overlapping_trees = False
+    overlapping_locker = False
+    current_locker_item = None
+    
+    for item in items_group:
+        if item.item_name == 'trees' and player_rect.colliderect(item.rect):
+            overlapping_trees = True
+        elif item.item_name == 'locker' and player_rect.colliderect(item.rect):
+            overlapping_locker = True
+            current_locker_item = item
+    
     # update player (handles movement, collisions, and animation)
-    # pass the overlapping_trees state to the player
-    dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = game_player.update(dt, collision_rects, overlapping_trees)
+    # pass the overlapping_trees and overlapping_locker state to the player
+    dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = game_player.update(dt, collision_rects, overlapping_trees, overlapping_locker)
+    
+    # set the animating locker item when animation starts
+    if game_player.locker_animation_active and current_locker_item and not animating_locker_item:
+        animating_locker_item = current_locker_item
+    
+    # handle locker animation (use persistent animating_locker_item)
+    if game_player.locker_animation_active and animating_locker_item:
+        game_player.locker_animation_timer += dt
+        if game_player.locker_animation_timer < game_player.locker_animation_duration * 0.5:
+            # first half: show locker_open
+            animating_locker_item.image = locker_open_sprite
+        elif game_player.locker_animation_timer < game_player.locker_animation_duration:
+            # second half: show locker_closed
+            animating_locker_item.image = locker_closed_sprite
+        else:
+            # animation finished, reset to closed and clear the animating item
+            animating_locker_item.image = locker_closed_sprite
+            game_player.locker_animation_active = False
+            animating_locker_item = None
     
     # handle thrown bottle
     if thrown_bottle:
@@ -159,10 +198,9 @@ while running:
         bottle_projectiles_group.remove(bottle)
         camera_group.remove(bottle)
     
-    # check for item collisions (open_box and trees)
+    # check for item collisions (open_box, bottle, book - trees and locker handled above)
     player_rect = game_player.rect
     items_to_remove = []
-    overlapping_trees = False  # reset tree overlap state each frame
     
     for item in items_group:
         if item.item_name == 'open_box':  # check for open_box specifically
@@ -186,10 +224,7 @@ while running:
                 game_player.grab_book()
                 # mark item for removal
                 items_to_remove.append(item)
-        elif item.item_name == 'trees':
-            if player_rect.colliderect(item.rect):
-                # set overlap state instead of entering trees
-                overlapping_trees = True
+        # Note: trees and locker items are not removed, only used for overlap detection
     
     # remove items that were interacted with
     for item in items_to_remove:
@@ -208,8 +243,10 @@ while running:
     fps_text = font.render(f"FPS: {fps:.1f}", True, fps_counter_color)
     screen.blit(fps_text, (10, 10))
     screen.blit(z_button_ui, (30, 30))  # draw Z button UI
-    if overlapping_trees:
+    if overlapping_trees and not game_player.box:
         screen.blit(trees_ui, (30, 50))
+    elif overlapping_locker and not game_player.box:
+        screen.blit(locker_ui, (30, 50))
     elif game_player.box:
         screen.blit(box_open_ui, (30, 50))
     elif game_player.book:

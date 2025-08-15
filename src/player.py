@@ -1,18 +1,20 @@
 import pygame
 from bottle import BottleProjectile
+import player_animator
 
 speed = 100
 
 class Player(pygame.sprite.Sprite):
     def __init__(self, position):
         super().__init__()
-        self.animator = PlayerAnimator()
+        self.animator = player_animator.PlayerAnimator()
         self.image = self.animator.get_current_sprite()
         self.rect = self.image.get_rect(center=position)
         self.position = pygame.Vector2(position)  # use float position for smooth movement
         self.moveable = True  # flag to check if player can move
         self.box = False  # flag to check if player is in a box
         self.trees = False  # flag to check if player is in trees
+        self.locker = False  # flag to check if player is in a locker
         self.bottle = False  # flag to check if player has a bottle
         self.book = False  # flag to check if player has a book
         self.speed_modifier = 1.0  # speed modifier for different terrain types
@@ -26,7 +28,14 @@ class Player(pygame.sprite.Sprite):
         self.box_animation_stage = 0  # 0: box_open, 1: box_middle, 2: box_closed0
         self.box_animation_speed = 0.3  # time for each stage in seconds
         
-    def update(self, dt, collision_rects, overlapping_trees=False):
+        # locker animation variables
+        self.locker_animation_active = False
+        self.locker_animation_timer = 0.0
+        self.locker_animation_duration = 0.5  # total duration for locker open animation
+        
+# UPDATE ===============================================================================================================================
+
+    def update(self, dt, collision_rects, overlapping_trees=False, overlapping_locker=False):
         # handle box animation if active
         if self.box_animation_active:
             self.box_animation_timer += dt
@@ -47,22 +56,18 @@ class Player(pygame.sprite.Sprite):
             return 0, 0, None, None, None  # no movement during animation, no bottle thrown, no book dropped, no box dropped
         
         # handle input and movement
-        dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = self.handle_input(dt, collision_rects, overlapping_trees)
+        dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = self.handle_input(dt, collision_rects, overlapping_trees, overlapping_locker)
         
         # update animation (always update for timing, regardless of box/trees state)
         self.animator.update(dt, dx, dy, self.box)
         
         # get the appropriate sprite based on current state
         if not self.box_animation_active:
-            self.image = self.animator.get_current_sprite(self.box, self.trees)
+            self.image = self.animator.get_current_sprite(self.box, self.trees, self.locker)
         
         return dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos
     
-    def set_speed_modifier(self, modifier):
-        """Set the speed modifier for different terrain types"""
-        self.speed_modifier = modifier
-    
-    def handle_input(self, dt, collision_rects, overlapping_trees=False):
+    def handle_input(self, dt, collision_rects, overlapping_trees=False, overlapping_locker=False):
         
         keys = pygame.key.get_pressed()
         z_key_pressed_this_frame = keys[pygame.K_z]
@@ -72,11 +77,14 @@ class Player(pygame.sprite.Sprite):
         dropped_book_pos = None
         dropped_box_pos = None
         
-        # handle Z key for box, trees, bottle, and book interaction
+        # handle Z key for box, trees, locker, bottle, and book interaction
         if z_key_just_pressed:  # only trigger on initial press, not hold
             if overlapping_trees and not self.trees:
                 # enter trees when Z is pressed and overlapping trees
                 self.enter_trees()
+            elif overlapping_locker and not self.locker:
+                # enter locker when Z is pressed and overlapping locker
+                self.enter_locker()
             elif self.box:
                 dropped_box_pos = self.exit_box(collision_rects)
             elif self.book:
@@ -85,14 +93,18 @@ class Player(pygame.sprite.Sprite):
                 thrown_bottle = self.throw_bottle()
             
         
-        # handle Z key hold for trees
+        # handle Z key hold for trees and locker
         if z_key_pressed_this_frame:
             if overlapping_trees and not self.trees and not self.box:
                 self.enter_trees()
+            elif overlapping_locker and not self.locker and not self.box:
+                self.enter_locker()
         else:
-            # exit trees when Z key is released
+            # exit trees or locker when Z key is released
             if self.trees:
                 self.exit_trees()
+            elif self.locker:
+                self.exit_locker()
         
         # update key state for next frame
         self.z_key_pressed_last_frame = z_key_pressed_this_frame
@@ -132,6 +144,12 @@ class Player(pygame.sprite.Sprite):
         actual_dy = self.position.y - original_y
         return actual_dx, actual_dy, thrown_bottle, dropped_book_pos, dropped_box_pos
     
+# HELPERS ==============================================================================================================================
+
+    def set_speed_modifier(self, modifier):
+        """Set the speed modifier for different terrain types"""
+        self.speed_modifier = modifier
+      
     def handle_collisions(self, dx, dy, collision_rects):
         player_size = (16, 16)
         
@@ -277,103 +295,21 @@ class Player(pygame.sprite.Sprite):
     def exit_trees(self):
         self.trees = False
         self.moveable = True
-
-class PlayerAnimator:
-    def __init__(self):
-        self.current_direction = "down"
-        self.is_moving = False
-        self.animation_timer = 0.0
-        self.animation_speed = 0.15  # time between frames in seconds
-        self.current_frame_index = 0
-        # animation sequence: 0, 1, 0, 2, 0, 1, 0, 2...
-        self.animation_sequence = [0, 1, 0, 2]
-        
-        # load all sprite images
-        self.sprites = {}
-        directions = ["down", "up", "left", "right"]
-        for direction in directions:
-            self.sprites[direction] = []
-            for i in range(3):
-                try:
-                    if direction == "up" and i == 1:
-                        # handle the special case of player_up_1.png
-                        sprite_path = f'data/sprites/player_{direction}_{i}.png'
-                    else:
-                        sprite_path = f'data/sprites/player_{direction}{i}.png'
-                    sprite = pygame.image.load(sprite_path).convert_alpha()
-                    self.sprites[direction].append(sprite)
-                except pygame.error as e:
-                    print(f"Warning: Could not load sprite {sprite_path}: {e}")
-                    # create a placeholder if sprite is missing
-                    placeholder = pygame.Surface((16, 16))
-                    placeholder.fill((255, 0, 255))  # magenta placeholder
-                    self.sprites[direction].append(placeholder)
-        
-        # load box sprites
-        self.box_sprites = {}
-        try:
-            self.box_sprites['open'] = pygame.image.load('data/sprites/box_open.png').convert_alpha()
-            self.box_sprites['middle'] = pygame.image.load('data/sprites/box_middle.png').convert_alpha()
-            self.box_sprites['closed0'] = pygame.image.load('data/sprites/box_closed0.png').convert_alpha()
-            self.box_sprites['closed1'] = pygame.image.load('data/sprites/box_closed1.png').convert_alpha()
-        except pygame.error as e:
-            print(f"Warning: Could not load box sprites: {e}")
-            # create placeholder sprites if missing
-            placeholder = pygame.Surface((16, 16))
-            placeholder.fill((255, 165, 0))  # orange placeholder
-            self.box_sprites['open'] = placeholder
-            self.box_sprites['middle'] = placeholder
-            self.box_sprites['closed0'] = placeholder
-            self.box_sprites['closed1'] = placeholder
     
-    def update(self, dt, dx, dy, is_in_box=False):
-        # determine if player is moving
-        self.is_moving = dx != 0 or dy != 0
-        
-        # update direction based on movement (prioritize vertical movement)
-        if dy > 0:
-            self.current_direction = "down"
-        elif dy < 0:
-            self.current_direction = "up"
-        elif dx > 0:
-            self.current_direction = "right"
-        elif dx < 0:
-            self.current_direction = "left"
-        
-        # update animation only if moving
-        if self.is_moving:
-            self.animation_timer += dt
-            if self.animation_timer >= self.animation_speed:
-                self.animation_timer = 0.0
-                self.current_frame_index = (self.current_frame_index + 1) % len(self.animation_sequence)
+    def enter_locker(self):
+        if not self.locker and not self.box:  # only enter if not already in locker or box
+            self.locker = True
+            self.moveable = False
+            # trigger locker animation in the sprite we're overlapping with
+            self.locker_animation_active = True
+            self.locker_animation_timer = 0.0
     
-    def get_current_sprite(self, is_in_box=False, is_in_trees=False):
-        if is_in_trees:
-            # create a transparent sprite when in trees
-            transparent_sprite = pygame.Surface((16, 16), pygame.SRCALPHA)
-            transparent_sprite.fill((0, 0, 0, 0))  # completely transparent
-            return transparent_sprite
-        elif is_in_box:
-            # if in box mode, alternate between closed0 and closed1 when moving
-            if self.is_moving:
-                # alternate between closed0 and closed1
-                if self.current_frame_index % 2 == 0:
-                    return self.box_sprites['closed0']
-                else:
-                    return self.box_sprites['closed1']
-            else:
-                # use closed0 when idle
-                return self.box_sprites['closed0']
-        else:
-            # normal player sprite logic
-            if self.is_moving:
-                # use animation sequence when moving
-                frame_number = self.animation_sequence[self.current_frame_index]
-            else:
-                # use frame 0 when idle
-                frame_number = 0
-            
-            return self.sprites[self.current_direction][frame_number]
+    def exit_locker(self):
+        self.locker = False
+        self.moveable = True
+        # trigger locker animation when exiting as well
+        self.locker_animation_active = True
+        self.locker_animation_timer = 0.0
 
 def quit_check(running):
     keys = pygame.key.get_pressed()
