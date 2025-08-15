@@ -1,4 +1,5 @@
 import pygame
+from bottle import BottleProjectile
 
 speed = 100
 
@@ -12,7 +13,12 @@ class Player(pygame.sprite.Sprite):
         self.moveable = True  # flag to check if player can move
         self.box = False  # flag to check if player is in a box
         self.trees = False  # flag to check if player is in trees
+        self.bottle = False  # flag to check if player has a bottle
+        self.book = False  # flag to check if player has a book
         self.speed_modifier = 1.0  # speed modifier for different terrain types
+        
+        # for tracking key presses
+        self.z_key_pressed_last_frame = False
         
         # box animation variables
         self.box_animation_active = False
@@ -38,10 +44,10 @@ class Player(pygame.sprite.Sprite):
                     # animation finished
                     self.box_animation_active = False
                     self.moveable = True
-            return 0, 0  # no movement during animation
+            return 0, 0, None, None, None  # no movement during animation, no bottle thrown, no book dropped, no box dropped
         
         # handle input and movement
-        dx, dy = self.handle_input(dt, collision_rects, overlapping_trees)
+        dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = self.handle_input(dt, collision_rects, overlapping_trees)
         
         # update animation (always update for timing, regardless of box/trees state)
         self.animator.update(dt, dx, dy, self.box)
@@ -50,7 +56,7 @@ class Player(pygame.sprite.Sprite):
         if not self.box_animation_active:
             self.image = self.animator.get_current_sprite(self.box, self.trees)
         
-        return dx, dy
+        return dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos
     
     def set_speed_modifier(self, modifier):
         """Set the speed modifier for different terrain types"""
@@ -59,22 +65,41 @@ class Player(pygame.sprite.Sprite):
     def handle_input(self, dt, collision_rects, overlapping_trees=False):
         
         keys = pygame.key.get_pressed()
+        z_key_pressed_this_frame = keys[pygame.K_z]
+        z_key_just_pressed = z_key_pressed_this_frame and not self.z_key_pressed_last_frame
         
-        # handle Z key for box and trees interaction
-        if keys[pygame.K_z]:
-            if self.box:
-                self.box = False
-            elif overlapping_trees and not self.trees:
-                # enter trees when Z is held and overlapping trees
+        thrown_bottle = None
+        dropped_book_pos = None
+        dropped_box_pos = None
+        
+        # handle Z key for box, trees, bottle, and book interaction
+        if z_key_just_pressed:  # only trigger on initial press, not hold
+            if overlapping_trees and not self.trees:
+                # enter trees when Z is pressed and overlapping trees
+                self.enter_trees()
+            elif self.box:
+                dropped_box_pos = self.exit_box(collision_rects)
+            elif self.book:
+                dropped_book_pos = self.drop_book(collision_rects)
+            elif self.bottle:
+                thrown_bottle = self.throw_bottle()
+            
+        
+        # handle Z key hold for trees
+        if z_key_pressed_this_frame:
+            if overlapping_trees and not self.trees and not self.box:
                 self.enter_trees()
         else:
             # exit trees when Z key is released
             if self.trees:
                 self.exit_trees()
         
+        # update key state for next frame
+        self.z_key_pressed_last_frame = z_key_pressed_this_frame
+        
         # if player is not moveable, don't process movement input
         if not self.moveable:
-            return 0, 0
+            return 0, 0, None, dropped_book_pos, dropped_box_pos
         
         # store original position
         original_x = self.position.x
@@ -102,10 +127,10 @@ class Player(pygame.sprite.Sprite):
         # update rect position (for rendering)
         self.rect.center = (int(self.position.x), int(self.position.y))
         
-        # return the actual movement that occurred
+        # return the actual movement that occurred and any thrown bottle
         actual_dx = self.position.x - original_x
         actual_dy = self.position.y - original_y
-        return actual_dx, actual_dy
+        return actual_dx, actual_dy, thrown_bottle, dropped_book_pos, dropped_box_pos
     
     def handle_collisions(self, dx, dy, collision_rects):
         player_size = (16, 16)
@@ -164,12 +189,85 @@ class Player(pygame.sprite.Sprite):
             self.box_animation_stage = 0
             # start with box_open sprite
             self.image = self.animator.box_sprites['open']
-    
-    def exit_box(self):
-        """Handle player exiting the box state"""
-        self.box = False
-        # sprite will automatically switch back to normal player sprite
-        # through the animator's get_current_sprite method
+
+    def throw_bottle(self):
+        """Throw a bottle in the direction the player is facing"""
+        if self.bottle:
+            self.bottle = False
+            # create a bottle projectile
+            bottle_projectile = BottleProjectile(
+                start_pos=self.position.copy(),
+                direction=self.animator.current_direction
+            )
+            return bottle_projectile
+        return None
+
+    def _get_drop_position_if_clear(self, collision_rects, enemy_group=None, item_name="item"):
+        """Helper function to calculate drop position and check for collisions"""
+        # calculate position one tile in front of player based on current direction
+        drop_x, drop_y = self.position.x, self.position.y
+        if self.animator.current_direction == "up":
+            drop_y -= 32
+        elif self.animator.current_direction == "down":
+            drop_y += 16
+        elif self.animator.current_direction == "left":
+            drop_x -= 32
+        elif self.animator.current_direction == "right":
+            drop_x += 16
+        
+        # create a rect for the item at the drop position (assuming 16x16 item size)
+        item_rect = pygame.Rect(drop_x - 8, drop_y - 8, 16, 16)
+        
+        # check for collisions with walls/objects
+        collision_found = False
+        for collision_rect in collision_rects:
+            if item_rect.colliderect(collision_rect):
+                collision_found = True
+                break
+        
+        # check for collisions with enemies if enemy_group is provided
+        if not collision_found and enemy_group:
+            for enemy in enemy_group:
+                if item_rect.colliderect(enemy.rect):
+                    collision_found = True
+                    break
+        
+        # return position if clear, None if blocked
+        if not collision_found:
+            return (drop_x, drop_y)
+        else:
+            print(f"Cannot drop {item_name} here - position is blocked!")
+            return None
+
+    def drop_book(self, collision_rects, enemy_group=None):
+        """Handle player dropping a book, only if drop position is not colliding"""
+        if self.book:  # only drop if holding a book
+            drop_pos = self._get_drop_position_if_clear(collision_rects, enemy_group, "book")
+            if drop_pos:
+                self.book = False
+                return drop_pos
+        return None
+
+    def pick_up_bottle(self):
+        """Handle player picking up a bottle"""
+        if not self.bottle:  # only pick up if not already holding a bottle
+            self.bottle = True
+
+    def grab_book(self):
+        """Handle player grabbing a book"""
+        if not self.book:  # only grab if not already holding a book
+            self.book = True
+
+    def exit_box(self, collision_rects, enemy_group=None):
+        """Handle player exiting the box state and placing box down"""
+        if self.box:  # only exit if currently in a box
+            drop_pos = self._get_drop_position_if_clear(collision_rects, enemy_group, "box")
+            if drop_pos:
+                self.box = False
+                # sprite will automatically switch back to normal player sprite
+                # through the animator's get_current_sprite method
+                return drop_pos
+        return None
     
     def enter_trees(self):
         if not self.trees and not self.box:  # only enter if not already in trees or box

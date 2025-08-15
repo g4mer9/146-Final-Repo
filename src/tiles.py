@@ -148,6 +148,26 @@ def get_tile_id_at_position(tmx_data, x, y, tile_size=16):
     
     return 0  # return 0 if no tile found
 
+def is_tile_slow(tmx_data, x, y, tile_size=16):
+    """Check if the tile at a specific world position has the 'slow' property set to true"""
+    # convert world coordinates to tile coordinates
+    tile_x = int(x // tile_size)
+    tile_y = int(y // tile_size)
+    
+    # look through visible layers to find background tiles
+    for layer in tmx_data.visible_layers:
+        if hasattr(layer, 'data'):
+            # check if the tile coordinates are within bounds
+            if (0 <= tile_y < len(layer.data) and 
+                0 <= tile_x < len(layer.data[tile_y])):
+                gid = layer.data[tile_y][tile_x]
+                if gid > 0:  # non-empty tile
+                    # get tile properties from the tileset
+                    tile_properties = tmx_data.get_tile_properties_by_gid(gid)
+                    if tile_properties and tile_properties.get('slow', False):
+                        return True
+    
+    return False  # return False if no slow tile found
 
 def debug_tileset(tmx_data):
     # get layers 
