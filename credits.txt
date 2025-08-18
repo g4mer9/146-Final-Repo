@@ -11,3 +11,7 @@ https://github.com/bitcraft/pyscroll
 https://github.com/bitcraft/pyscroll/wiki/Tutorial
 http://pygametutorials.wikidot.com/tutorials-basic
 https://pytmx.readthedocs.io/en/latest/
+
+assets from:
+https://falchetbros.itch.io/sprites-emotes-game-boy-16-x-16
+https://kenney.nl/assets/rpg-urban-pack

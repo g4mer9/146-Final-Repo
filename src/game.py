@@ -3,6 +3,7 @@ import player
 import tiles
 import pyscroll
 from bottle import BottleProjectile
+from enemy import Enemy
 
 # INITIALIZATIONS ====================================================================================================================================
 
@@ -48,6 +49,9 @@ items_group = pygame.sprite.Group()
 # create bottle projectiles group
 bottle_projectiles_group = pygame.sprite.Group()
 
+# create enemies group
+enemies_group = pygame.sprite.Group()
+
 # create item sprites from items data
 for item_data in items_data:
     item_sprite = tiles.Item(
@@ -66,6 +70,19 @@ player_start_pos = (player_start_tile[0] * 16 + 8, player_start_tile[1] * 16 + 8
 game_player = player.Player(player_start_pos)
 # add player to camera group on layer 2 (above items)
 camera_group.add(game_player, layer=2)
+
+# create enemies and add to camera group
+enemy_spawn_positions = [
+    (player_start_pos[0] + 80, player_start_pos[1] + 40),   # southeast of player
+    (player_start_pos[0] - 60, player_start_pos[1] - 30),   # northwest of player
+    (player_start_pos[0] + 100, player_start_pos[1] - 50),  # northeast of player
+]
+
+for enemy_pos in enemy_spawn_positions:
+    enemy = Enemy(enemy_pos, game_player, collision_rects)
+    enemies_group.add(enemy)
+    # add enemy to camera group on layer 1 (above items, below player)
+    camera_group.add(enemy, layer=1)
 
 # Center camera on player initially
 camera_group.center(game_player.rect.center)
@@ -120,6 +137,10 @@ while running:
     # update player (handles movement, collisions, and animation)
     # pass the overlapping_trees and overlapping_locker state to the player
     dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = game_player.update(dt, collision_rects, overlapping_trees, overlapping_locker)
+    
+    # update enemies
+    for enemy in enemies_group:
+        enemy.update(dt)
     
     # set the animating locker item when animation starts
     if game_player.locker_animation_active and current_locker_item and not animating_locker_item:
