@@ -63,6 +63,11 @@ class Enemy(pygame.sprite.Sprite):
 
 # BEHAVIORS=====================================================================================================================================
 
+    # implement later for A*
+    def follow_path(self, dt):
+        # For now, movement is handled in patrol(), so just return the last move
+        return 0, 0
+
     # mostly implemented patrol state for testing
     # in full version, random paths won't be used
     def patrol(self):
@@ -84,23 +89,30 @@ class Enemy(pygame.sprite.Sprite):
                 # Use collision handling instead of direct position update
                 self.handle_collisions(move.x, move.y)
 
+
+    # chase happens when the player is found
     def chase(self):
         # Chase behavior
         pass
 
+    # camp happens after the enemy loses sight of the player
+    # the enemy stays in the player's last known location, occasionally turning to look around
+    def camp(self):
+        # Camp behavior
+        pass
+
+    # only possible from the camp or patrol states
+    # triggered by seeing a book in their path
+    # they return to their previous state after x seconds have passed (30?) 
     def distracted(self):
         # distracted behavior
         pass
 
-    # for HFSM
+    # for HFSM 
+    # called 3 times a second, should call helper functions that check sight, hearing
     def check_transitions(self):
         # Check for state transitions
         pass
-
-    # implement later for A*
-    def follow_path(self, dt):
-        # For now, movement is handled in patrol(), so just return the last move
-        return 0, 0
 
     def handle_collisions(self, dx, dy):
         """Handle enemy collisions with walls, similar to player collision handling"""
