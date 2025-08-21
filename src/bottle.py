@@ -113,6 +113,9 @@ class BulletProjectile(pygame.sprite.Sprite):
         
         self.rect = self.image.get_rect(center=start_pos)
         
+        # Create mask for pixel-perfect collision detection
+        self.mask = pygame.mask.from_surface(self.image)
+        
         # Set velocity based on direction
         self.velocity = pygame.Vector2(0, 0)
         if direction == "up":
@@ -124,15 +127,20 @@ class BulletProjectile(pygame.sprite.Sprite):
         elif direction == "right":
             self.velocity.x = self.speed
     
-    def update(self, dt, collision_rects, player_rect=None):
+    def update(self, dt, collision_rects, player_sprite=None):
         """Update bullet position and check for collisions"""
         # Move the bullet
         self.position += self.velocity * dt
         self.rect.center = (int(self.position.x), int(self.position.y))
         
-        # Check for player collision first (higher priority)
-        if player_rect and self.rect.colliderect(player_rect):
-            return "player_hit"  # Signal that player was hit
+        # Check for player collision using mask collision (pixel-perfect)
+        if player_sprite:
+            # First do a quick rect collision check
+            if self.rect.colliderect(player_sprite.rect):
+                # Then do pixel-perfect collision using masks
+                offset = (player_sprite.rect.x - self.rect.x, player_sprite.rect.y - self.rect.y)
+                if self.mask.overlap(player_sprite.mask, offset):
+                    return "player_hit"  # Signal that player was hit
         
         # Check for wall collisions
         bullet_rect = pygame.Rect(self.position.x - 4, self.position.y - 4, 8, 8)

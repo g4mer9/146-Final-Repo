@@ -236,7 +236,7 @@ while running:
     bullets_to_remove = []
     for bullet in bullet_projectiles_group:
         # check if bullet hit something
-        collision_result = bullet.update(dt, collision_rects, game_player.rect)
+        collision_result = bullet.update(dt, collision_rects, game_player)
         if collision_result == "player_hit":
             # Player was hit by bullet - reset the game
             print("Player hit by bullet! Resetting game...")
