@@ -4,6 +4,7 @@ import tiles
 import pyscroll
 from bottle import BottleProjectile
 from enemy import Enemy
+from sound_system import sound_system
 
 # INITIALIZATIONS ====================================================================================================================================
 
@@ -100,6 +101,9 @@ while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
+
+    # update sound system (remove expired sounds)
+    sound_system.update()
 
     # quit game check
     running = player.quit_check(running)

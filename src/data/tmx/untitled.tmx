@@ -2656,7 +2656,7 @@
   <object id="7" name="trees" x="602.364" y="336.545" width="27.2727" height="46.3636"/>
   <object id="8" name="trees" x="474.25" y="400.625" width="27.625" height="46.5"/>
   <object id="9" name="trees" x="330.125" y="352.625" width="27.625" height="46.25"/>
-  <object id="10" name="bottle" gid="487" x="336" y="208" width="16" height="16"/>
+  <object id="10" name="bottle" gid="487" x="448" y="288" width="16" height="16"/>
   <object id="11" name="book" gid="488" x="400" y="256" width="16" height="16"/>
   <object id="12" name="locker" gid="828" x="368" y="192" width="16" height="16"/>
  </objectgroup>

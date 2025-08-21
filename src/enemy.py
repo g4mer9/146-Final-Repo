@@ -1,7 +1,9 @@
 import pygame
 import math
+import random
 from heapq import heappop, heappush # for A*
 import tiles
+from sound_system import sound_system
 
 class Enemy(pygame.sprite.Sprite):
     def __init__(self, position, player_ref, collision_rects):
@@ -21,19 +23,29 @@ class Enemy(pygame.sprite.Sprite):
         self.patrol_POIs = []
         self.patrol_index = 0
 
-        # placeholder values
-        self.hearing_range = 7
-        self.sight_range = 10
+        # ADJUSTABLE ENEMY PARAMETERS =====================================================
+        self.hearing_range = 80      # range in pixels for hearing sounds (adjustable)
+        self.sight_range = 120       # range in pixels for vision cone (adjustable)
+        self.vision_cone_angle = 60  # total angle of vision cone in degrees (adjustable)
         self.attack_range = 5
         self.bullet_speed = 15
         self.ms_between_AI_checks = 333
         self.last_AI_check = 0
 
+        # vision and detection states
+        self.player_seen_clearly = False
+        self.player_glimpsed = False
+        self.sound_heard = False
+        self.last_known_player_position = None
+
+        # ADD NEW STATES HERE============================================================================================================================
         self.state = "patrol"
         self.states = {
             "patrol": self.patrol,
             "chase": self.chase,
-            "distracted": self.distracted
+            "inspect": self.inspect,
+            "distracted": self.distracted,
+            "camp": self.camp
         }
         
         # Store dt for use in behaviors
@@ -92,27 +104,188 @@ class Enemy(pygame.sprite.Sprite):
 
     # chase happens when the player is found
     def chase(self):
-        # Chase behavior
+        # Placeholder: enemy stands still when chasing
+        # TODO: Implement actual chase behavior with pathfinding to player
         pass
+
+    # inspect happens when the enemy is curious about a noise or movement
+    def inspect(self):
+        # Placeholder: enemy stands still when investigating
+        # TODO: Implement movement towards last known position/sound location
+        # For now, just transition back to patrol after a delay
+        if not hasattr(self, 'inspect_timer'):
+            self.inspect_timer = 0.0
+        
+        self.inspect_timer += self.dt
+        if self.inspect_timer >= 3.0:  # investigate for 3 seconds then return to patrol
+            self.state = "patrol"
+            self.inspect_timer = 0.0
+            self.last_known_player_position = None
 
     # camp happens after the enemy loses sight of the player
     # the enemy stays in the player's last known location, occasionally turning to look around
     def camp(self):
-        # Camp behavior
+        # Placeholder: enemy stands still when camping
+        # TODO: Implement camping behavior with occasional turning/looking around
+        # TODO: Add timer to return to patrol after losing player for too long
         pass
 
     # only possible from the camp or patrol states
     # triggered by seeing a book in their path
     # they return to their previous state after x seconds have passed (30?) 
     def distracted(self):
-        # distracted behavior
-        pass
+        # Placeholder: enemy stands still when distracted
+        # TODO: Implement distraction behavior (moving towards book, reading it)
+        # TODO: Add timer to return to previous state after 30 seconds
+        if not hasattr(self, 'distracted_timer'):
+            self.distracted_timer = 0.0
+        
+        self.distracted_timer += self.dt
+        if self.distracted_timer >= 30.0:  # distracted for 30 seconds then return to patrol
+            self.state = "patrol"
+            self.distracted_timer = 0.0
+
+# AI STUFF============================================================================================================================
 
     # for HFSM 
     # called 3 times a second, should call helper functions that check sight, hearing
     def check_transitions(self):
-        # Check for state transitions
-        pass
+        # Update vision and hearing
+        self.check_sight()
+        self.check_hearing()
+        
+        # State transition logic
+        if self.state == "patrol":
+            if self.player_seen_clearly:
+                self.state = "chase"
+                print("Enemy: Spotted player clearly - entering chase mode!")
+            elif self.player_glimpsed or self.sound_heard:
+                self.state = "inspect"
+                if self.player_glimpsed:
+                    print("Enemy: Caught a glimpse of something - investigating...")
+                if self.sound_heard:
+                    print("Enemy: Heard a sound - investigating...")
+        
+        elif self.state == "inspect":
+            if self.player_seen_clearly:
+                self.state = "chase"
+                print("Enemy: Found the target - entering chase mode!")
+            # inspect state will automatically return to patrol when reaching investigation point
+        
+        elif self.state == "chase":
+            # Add logic for losing the player and transitioning to camp or patrol
+            if not self.player_seen_clearly:
+                # Could add a timer here before transitioning to camp
+                pass
+        
+        # Reset detection flags after processing
+        if not (self.player_seen_clearly or self.player_glimpsed or self.sound_heard):
+            # No immediate threats detected
+            pass
+
+    # Check if the enemy can see the player
+    def check_sight(self):
+        self.player_seen_clearly = False
+        self.player_glimpsed = False
+        
+        # Get player position
+        player_pos = pygame.Vector2(self.player_ref.rect.center)
+        enemy_pos = pygame.Vector2(self.position)
+        
+        # Calculate distance to player
+        distance_to_player = enemy_pos.distance_to(player_pos)
+        
+        # Check if player is within sight range
+        if distance_to_player > self.sight_range:
+            return
+        
+        # Calculate direction to player
+        direction_to_player = (player_pos - enemy_pos).normalize()
+        
+        # Get enemy facing direction
+        enemy_facing = self.get_facing_direction()
+        
+        # Calculate angle between enemy facing direction and direction to player
+        angle_to_player = math.degrees(math.atan2(direction_to_player.y, direction_to_player.x))
+        enemy_facing_angle = math.degrees(math.atan2(enemy_facing.y, enemy_facing.x))
+        
+        # Normalize angles to 0-360 range
+        angle_diff = abs(angle_to_player - enemy_facing_angle)
+        if angle_diff > 180:
+            angle_diff = 360 - angle_diff
+        
+        # Check if player is within vision cone
+        if angle_diff <= self.vision_cone_angle / 2:
+            # Player is in vision cone, now check for line of sight
+            if self.has_line_of_sight(enemy_pos, player_pos):
+                # Player is clearly visible - check if they're hidden
+                if self.player_ref.trees or self.player_ref.locker or self.player_ref.box:
+                    # Player is hidden but we caught a glimpse
+                    self.player_glimpsed = True
+                else:
+                    # Player is clearly seen
+                    self.player_seen_clearly = True
+                    self.last_known_player_position = (player_pos.x, player_pos.y)
+    
+    def get_facing_direction(self):
+        """Get the direction the enemy is currently facing as a vector"""
+        direction_map = {
+            "down": pygame.Vector2(0, 1),
+            "up": pygame.Vector2(0, -1),
+            "left": pygame.Vector2(-1, 0),
+            "right": pygame.Vector2(1, 0)
+        }
+        return direction_map.get(self.animator.current_direction, pygame.Vector2(0, 1))
+    
+    def has_line_of_sight(self, start_pos, end_pos):
+        """Check if there's a clear line of sight between two positions"""
+        # Use Bresenham's line algorithm to check for obstacles
+        dx = abs(end_pos.x - start_pos.x)
+        dy = abs(end_pos.y - start_pos.y)
+        
+        # Determine the step direction
+        sx = 1 if start_pos.x < end_pos.x else -1
+        sy = 1 if start_pos.y < end_pos.y else -1
+        
+        err = dx - dy
+        
+        x, y = int(start_pos.x), int(start_pos.y)
+        end_x, end_y = int(end_pos.x), int(end_pos.y)
+        
+        while True:
+            # Check if current position collides with any obstacle
+            check_rect = pygame.Rect(x - 4, y - 4, 8, 8)
+            for collision_rect in self.collision_rects:
+                if check_rect.colliderect(collision_rect):
+                    return False  # Line of sight blocked
+            
+            # Check if we've reached the end
+            if x == end_x and y == end_y:
+                break
+            
+            # Bresenham's algorithm step
+            e2 = 2 * err
+            if e2 > -dy:
+                err -= dy
+                x += sx
+            if e2 < dx:
+                err += dx
+                y += sy
+        
+        return True  # Clear line of sight
+
+    # Check if the enemy can hear a thrown bottle (bottle sounds must last 333 ms so that it doesn't miss the hearing window)
+    def check_hearing(self):
+        self.sound_heard = False
+        
+        # Get all sounds within hearing range
+        sounds_in_range = sound_system.get_sounds_in_range(self.position, self.hearing_range)
+        
+        for sound in sounds_in_range:
+            if sound['type'] == 'bottle_break':
+                self.sound_heard = True
+                self.last_known_player_position = sound['position']
+                break
 
     def handle_collisions(self, dx, dy):
         """Handle enemy collisions with walls, similar to player collision handling"""
