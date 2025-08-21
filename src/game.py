@@ -76,10 +76,19 @@ game_player = player.Player(player_start_pos)
 camera_group.add(game_player, layer=2)
 
 # create enemies and add to camera group
+enemy_spawn_tiles = [
+    (15, 30),  
+    (33, 30),  
+    (12, 20),  
+    (36, 20),
+    (32, 45),
+    (15, 56),
+    (12, 40),
+    (36, 40)
+]
+
 enemy_spawn_positions = [
-    (player_start_pos[0] + 80, player_start_pos[1] + 40),   # southeast of player
-    (player_start_pos[0] - 60, player_start_pos[1] - 30),   # northwest of player
-    (player_start_pos[0] + 100, player_start_pos[1] - 50),  # northeast of player
+    (tile[0] * 16 + 8, tile[1] * 16 + 8) for tile in enemy_spawn_tiles
 ]
 
 for enemy_pos in enemy_spawn_positions:
