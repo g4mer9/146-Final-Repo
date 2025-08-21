@@ -1,6 +1,7 @@
 import pygame
 import math
 from heapq import heappop, heappush # for A*
+import tiles
 
 class Enemy(pygame.sprite.Sprite):
     def __init__(self, position, player_ref, collision_rects):
@@ -62,6 +63,8 @@ class Enemy(pygame.sprite.Sprite):
 
 # BEHAVIORS=====================================================================================================================================
 
+    # mostly implemented patrol state for testing
+    # in full version, random paths won't be used
     def patrol(self):
         # If no patrol path, generate a new random path
         if not self.path:
@@ -176,6 +179,7 @@ class Enemy(pygame.sprite.Sprite):
         # Update rect position
         self.rect.center = (int(self.position.x), int(self.position.y))
 
+    # debug only function. comment out when done
     def generate_random_patrol_path(self):
         # Generate a random walkable path of 3-5 points within the map bounds
         import random
