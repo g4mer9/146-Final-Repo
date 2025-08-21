@@ -35,7 +35,7 @@ class Player(pygame.sprite.Sprite):
         
 # UPDATE ===============================================================================================================================
 
-    def update(self, dt, collision_rects, overlapping_trees=False, overlapping_locker=False):
+    def update(self, dt, collision_rects, enemies_group=None, overlapping_trees=False, overlapping_locker=False):
         # handle box animation if active
         if self.box_animation_active:
             self.box_animation_timer += dt
@@ -56,7 +56,7 @@ class Player(pygame.sprite.Sprite):
             return 0, 0, None, None, None  # no movement during animation, no bottle thrown, no book dropped, no box dropped
         
         # handle input and movement
-        dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = self.handle_input(dt, collision_rects, overlapping_trees, overlapping_locker)
+        dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = self.handle_input(dt, collision_rects, enemies_group, overlapping_trees, overlapping_locker)
         
         # update animation (always update for timing, regardless of box/trees state)
         self.animator.update(dt, dx, dy, self.box)
@@ -67,7 +67,7 @@ class Player(pygame.sprite.Sprite):
         
         return dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos
     
-    def handle_input(self, dt, collision_rects, overlapping_trees=False, overlapping_locker=False):
+    def handle_input(self, dt, collision_rects, enemies_group=None, overlapping_trees=False, overlapping_locker=False):
         
         keys = pygame.key.get_pressed()
         z_key_pressed_this_frame = keys[pygame.K_z]
@@ -86,9 +86,9 @@ class Player(pygame.sprite.Sprite):
                 # enter locker when Z is pressed and overlapping locker
                 self.enter_locker()
             elif self.box:
-                dropped_box_pos = self.exit_box(collision_rects)
+                dropped_box_pos = self.exit_box(collision_rects, enemies_group)
             elif self.book:
-                dropped_book_pos = self.drop_book(collision_rects)
+                dropped_book_pos = self.drop_book(collision_rects, enemies_group)
             elif self.bottle:
                 thrown_bottle = self.throw_bottle()
             
@@ -134,7 +134,7 @@ class Player(pygame.sprite.Sprite):
             dy += current_speed * dt
         
         # handle collisions and update position
-        self.handle_collisions(dx, dy, collision_rects)
+        self.handle_collisions(dx, dy, collision_rects, enemies_group)
         
         # update rect position (for rendering)
         self.rect.center = (int(self.position.x), int(self.position.y))
@@ -150,7 +150,7 @@ class Player(pygame.sprite.Sprite):
         """Set the speed modifier for different terrain types"""
         self.speed_modifier = modifier
       
-    def handle_collisions(self, dx, dy, collision_rects):
+    def handle_collisions(self, dx, dy, collision_rects, enemies_group=None):
         player_size = (16, 16)
         
         # handle horizontal movement first
@@ -164,6 +164,7 @@ class Player(pygame.sprite.Sprite):
             collision_found = False
             closest_x = self.position.x
             
+            # check collisions with walls
             for rect in collision_rects:
                 if player_rect.colliderect(rect):
                     collision_found = True
@@ -171,6 +172,16 @@ class Player(pygame.sprite.Sprite):
                         closest_x = min(closest_x, rect.left - player_size[0]//2)
                     else:  # moving left
                         closest_x = max(closest_x, rect.right + player_size[0]//2)
+            
+            # check collisions with enemies
+            if enemies_group:
+                for enemy in enemies_group:
+                    if player_rect.colliderect(enemy.rect):
+                        collision_found = True
+                        if dx > 0:  # moving right
+                            closest_x = min(closest_x, enemy.rect.left - player_size[0]//2)
+                        else:  # moving left
+                            closest_x = max(closest_x, enemy.rect.right + player_size[0]//2)
             
             if collision_found:
                 self.position.x = closest_x
@@ -186,6 +197,7 @@ class Player(pygame.sprite.Sprite):
             collision_found = False
             closest_y = self.position.y
             
+            # check collisions with walls
             for rect in collision_rects:
                 if player_rect.colliderect(rect):
                     collision_found = True
@@ -193,6 +205,16 @@ class Player(pygame.sprite.Sprite):
                         closest_y = min(closest_y, rect.top - player_size[1]//2)
                     else:  # moving up
                         closest_y = max(closest_y, rect.bottom + player_size[1]//2)
+            
+            # check collisions with enemies
+            if enemies_group:
+                for enemy in enemies_group:
+                    if player_rect.colliderect(enemy.rect):
+                        collision_found = True
+                        if dy > 0:  # moving down
+                            closest_y = min(closest_y, enemy.rect.top - player_size[1]//2)
+                        else:  # moving up
+                            closest_y = max(closest_y, enemy.rect.bottom + player_size[1]//2)
             
             if collision_found:
                 self.position.y = closest_y

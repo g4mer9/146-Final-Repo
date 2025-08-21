@@ -140,7 +140,7 @@ while running:
     
     # update player (handles movement, collisions, and animation)
     # pass the overlapping_trees and overlapping_locker state to the player
-    dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = game_player.update(dt, collision_rects, overlapping_trees, overlapping_locker)
+    dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = game_player.update(dt, collision_rects, enemies_group, overlapping_trees, overlapping_locker)
     
     # update enemies
     for enemy in enemies_group:
@@ -262,6 +262,10 @@ while running:
     # draw everything (map and sprites)
     # note: no need to fill screen, pyscroll handles clearing
     camera_group.draw(screen)
+    
+    # Draw vision cones for enemies (after drawing sprites but before UI)
+    for enemy in enemies_group:
+        enemy.draw_vision_cone(screen, map_layer)
 
     # draw FPS counter
     fps = clock.get_fps()

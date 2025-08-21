@@ -24,8 +24,8 @@ class Enemy(pygame.sprite.Sprite):
         self.patrol_index = 0
 
         # ADJUSTABLE ENEMY PARAMETERS =====================================================
-        self.hearing_range = 80      # range in pixels for hearing sounds (adjustable)
-        self.sight_range = 120       # range in pixels for vision cone (adjustable)
+        self.hearing_range = 120      # range in pixels for hearing sounds (adjustable)
+        self.sight_range = 60       # range in pixels for vision cone (adjustable)
         self.vision_cone_angle = 60  # total angle of vision cone in degrees (adjustable)
         self.attack_range = 5
         self.bullet_speed = 15
@@ -199,6 +199,13 @@ class Enemy(pygame.sprite.Sprite):
         if distance_to_player > self.sight_range:
             return
         
+        # Check if player is at the exact same position (distance is zero)
+        if distance_to_player < 0.1:  # very close or same position
+            # Player is right on top of enemy - definitely seen clearly
+            self.player_seen_clearly = True
+            self.last_known_player_position = player_pos.copy()
+            return
+        
         # Calculate direction to player
         direction_to_player = (player_pos - enemy_pos).normalize()
         
@@ -239,6 +246,11 @@ class Enemy(pygame.sprite.Sprite):
     
     def has_line_of_sight(self, start_pos, end_pos):
         """Check if there's a clear line of sight between two positions"""
+        # Check if start and end positions are the same or very close
+        distance = start_pos.distance_to(end_pos)
+        if distance < 1.0:
+            return True  # Very close, assume clear line of sight
+        
         # Use Bresenham's line algorithm to check for obstacles
         dx = abs(end_pos.x - start_pos.x)
         dy = abs(end_pos.y - start_pos.y)
@@ -252,7 +264,16 @@ class Enemy(pygame.sprite.Sprite):
         x, y = int(start_pos.x), int(start_pos.y)
         end_x, end_y = int(end_pos.x), int(end_pos.y)
         
+        # Add a safety counter to prevent infinite loops
+        max_iterations = int(distance) + 10
+        iteration_count = 0
+        
         while True:
+            # Safety check to prevent infinite loops
+            iteration_count += 1
+            if iteration_count > max_iterations:
+                return True  # Assume clear if we hit the limit
+            
             # Check if current position collides with any obstacle
             check_rect = pygame.Rect(x - 4, y - 4, 8, 8)
             for collision_rect in self.collision_rects:
@@ -273,6 +294,58 @@ class Enemy(pygame.sprite.Sprite):
                 y += sy
         
         return True  # Clear line of sight
+
+    def draw_vision_cone(self, screen, map_layer):
+        """Draw a semitransparent vision cone directly on the screen"""
+        # Get enemy facing direction
+        facing_direction = self.get_facing_direction()
+        
+        # Calculate the angle of the facing direction
+        facing_angle = math.degrees(math.atan2(facing_direction.y, facing_direction.x))
+        
+        # Calculate cone boundaries
+        half_cone_angle = self.vision_cone_angle / 2
+        start_angle = facing_angle - half_cone_angle
+        end_angle = facing_angle + half_cone_angle
+        
+        # Get the actual camera position from the map layer
+        # Try different ways to access the camera position
+        try:
+            camera_x = map_layer.view_rect.x
+            camera_y = map_layer.view_rect.y
+        except AttributeError:
+            try:
+                camera_x = map_layer.map_rect.x
+                camera_y = map_layer.map_rect.y
+            except AttributeError:
+                # Fallback: use the rect position directly
+                camera_x = getattr(map_layer, '_camera_x', 0)
+                camera_y = getattr(map_layer, '_camera_y', 0)
+        
+        # Calculate enemy's screen position using the actual camera position
+        enemy_screen_x = self.position.x - camera_x
+        enemy_screen_y = self.position.y - camera_y
+        
+        # Create points for the vision cone polygon
+        points = [(enemy_screen_x, enemy_screen_y)]  # Start at enemy position
+        
+        # Add points along the arc of the vision cone
+        num_arc_points = 20
+        for i in range(num_arc_points + 1):
+            angle = start_angle + (end_angle - start_angle) * (i / num_arc_points)
+            angle_rad = math.radians(angle)
+            
+            # Calculate point on the edge of the sight range
+            point_x = enemy_screen_x + self.sight_range * math.cos(angle_rad)
+            point_y = enemy_screen_y + self.sight_range * math.sin(angle_rad)
+            points.append((point_x, point_y))
+        
+        # Create a surface with per-pixel alpha for the vision cone
+        cone_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        pygame.draw.polygon(cone_surface, (255, 255, 0, 60), points)  # Semi-transparent yellow
+        
+        # Blit the vision cone to the screen
+        screen.blit(cone_surface, (0, 0), special_flags=pygame.BLEND_ALPHA_SDL2)
 
     # Check if the enemy can hear a thrown bottle (bottle sounds must last 333 ms so that it doesn't miss the hearing window)
     def check_hearing(self):
