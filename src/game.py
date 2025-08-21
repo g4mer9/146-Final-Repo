@@ -2,7 +2,7 @@ import pygame
 import player
 import tiles
 import pyscroll
-from bottle import BottleProjectile
+from bottle import BottleProjectile, BulletProjectile
 from enemy import Enemy
 from sound_system import sound_system
 
@@ -49,6 +49,9 @@ items_group = pygame.sprite.Group()
 
 # create bottle projectiles group
 bottle_projectiles_group = pygame.sprite.Group()
+
+# create bullet projectiles group
+bullet_projectiles_group = pygame.sprite.Group()
 
 # create enemies group
 enemies_group = pygame.sprite.Group()
@@ -145,6 +148,12 @@ while running:
     # update enemies
     for enemy in enemies_group:
         enemy.update(dt)
+        
+        # collect bullets fired by enemies
+        for bullet in enemy.fired_bullets:
+            bullet_projectiles_group.add(bullet)
+            camera_group.add(bullet, layer=1)  # add on layer 1 (above ground, below player)
+        enemy.fired_bullets.clear()  # clear the list after adding to groups
     
     # set the animating locker item when animation starts
     if game_player.locker_animation_active and current_locker_item and not animating_locker_item:
@@ -223,6 +232,51 @@ while running:
         bottle_projectiles_group.remove(bottle)
         camera_group.remove(bottle)
     
+    # update bullet projectiles
+    bullets_to_remove = []
+    for bullet in bullet_projectiles_group:
+        # check if bullet hit something
+        collision_result = bullet.update(dt, collision_rects, game_player.rect)
+        if collision_result == "player_hit":
+            # Player was hit by bullet - reset the game
+            print("Player hit by bullet! Resetting game...")
+            # Reset player position
+            game_player.position = pygame.Vector2(player_start_pos)
+            game_player.rect.center = player_start_pos
+            # Remove all bullets
+            for b in bullet_projectiles_group:
+                camera_group.remove(b)
+            bullet_projectiles_group.empty()
+            # Reset all enemies to their starting positions and states
+            for i, enemy in enumerate(enemies_group):
+                enemy.position = pygame.Vector2(enemy_spawn_positions[i])
+                enemy.rect.center = enemy_spawn_positions[i]
+                enemy.state = "patrol"
+                enemy.path = []
+                enemy.player_seen_clearly = False
+                enemy.player_glimpsed = False
+                enemy.sound_heard = False
+                enemy.last_known_player_position = None
+                enemy.fired_bullets.clear()
+                enemy.show_icon = False
+                enemy.icon_timer = 0.0
+                enemy.current_icon = None
+                # Reset any timers
+                if hasattr(enemy, 'inspect_timer'):
+                    enemy.inspect_timer = 0.0
+                if hasattr(enemy, 'distracted_timer'):
+                    enemy.distracted_timer = 0.0
+                enemy.last_shot_time = 0
+            bullets_to_remove.clear()
+            break
+        elif collision_result == "wall_hit":
+            bullets_to_remove.append(bullet)
+    
+    # remove bullets that hit walls
+    for bullet in bullets_to_remove:
+        bullet_projectiles_group.remove(bullet)
+        camera_group.remove(bullet)
+    
     # check for item collisions (open_box, bottle, book - trees and locker handled above)
     player_rect = game_player.rect
     items_to_remove = []
@@ -236,7 +290,7 @@ while running:
                 # mark item for removal
                 items_to_remove.append(item)
         elif item.item_name == 'bottle':
-            if player_rect.colliderect(item.rect):
+            if player_rect.colliderect(item.rect) and not game_player.bottle:
                 print(f"Player is touching the bottle at position ({item.rect.x}, {item.rect.y})")
                 # call the function to handle bottle interaction
                 game_player.pick_up_bottle()
@@ -266,6 +320,7 @@ while running:
     # Draw vision cones for enemies (after drawing sprites but before UI)
     for enemy in enemies_group:
         enemy.draw_vision_cone(screen, map_layer)
+        enemy.draw_state_icon(screen, map_layer)
 
     # draw FPS counter
     fps = clock.get_fps()

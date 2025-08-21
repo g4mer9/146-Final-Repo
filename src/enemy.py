@@ -28,9 +28,14 @@ class Enemy(pygame.sprite.Sprite):
         self.sight_range = 60       # range in pixels for vision cone (adjustable)
         self.vision_cone_angle = 60  # total angle of vision cone in degrees (adjustable)
         self.attack_range = 5
-        self.bullet_speed = 15
+        self.bullet_speed = 150  # increased from 15 to 150 for reasonable bullet speed
         self.ms_between_AI_checks = 333
         self.last_AI_check = 0
+        
+        # Shooting mechanics
+        self.shooting_cooldown = 1000  # milliseconds between shots
+        self.last_shot_time = 0
+        self.fired_bullets = []  # list to track bullets fired by this enemy
 
         # vision and detection states
         self.player_seen_clearly = False
@@ -50,6 +55,13 @@ class Enemy(pygame.sprite.Sprite):
         
         # Store dt for use in behaviors
         self.dt = 0
+
+        # Icon display system for state changes
+        self.show_icon = False
+        self.icon_timer = 0.0
+        self.icon_duration = 0.75  # show icon for 0.75 seconds
+        self.current_icon = None
+        self.load_icons()
 
         self.load_sprites()
         self.image = self.sprites["down"][0]
@@ -72,6 +84,30 @@ class Enemy(pygame.sprite.Sprite):
                     placeholder = pygame.Surface((16, 16))
                     placeholder.fill((255, 0, 255))  # magenta placeholder
                     self.sprites[direction].append(placeholder)
+
+    def load_icons(self):
+        """Load icon sprites for state indicators"""
+        try:
+            self.exclamation_icon = pygame.image.load('data/sprites/exclamation.png').convert_alpha()
+        except pygame.error as e:
+            print(f"Warning: Could not load exclamation.png: {e}")
+            # create a placeholder if sprite is missing
+            self.exclamation_icon = pygame.Surface((16, 16))
+            self.exclamation_icon.fill((255, 0, 0))  # red placeholder
+            
+        try:
+            self.question_icon = pygame.image.load('data/sprites/question.png').convert_alpha()
+        except pygame.error as e:
+            print(f"Warning: Could not load question.png: {e}")
+            # create a placeholder if sprite is missing
+            self.question_icon = pygame.Surface((16, 16))
+            self.question_icon.fill((0, 0, 255))  # blue placeholder
+
+    def show_state_icon(self, icon_type):
+        """Display an icon above the enemy for a brief period"""
+        self.show_icon = True
+        self.icon_timer = 0.0
+        self.current_icon = icon_type
 
 # BEHAVIORS=====================================================================================================================================
 
@@ -104,9 +140,17 @@ class Enemy(pygame.sprite.Sprite):
 
     # chase happens when the player is found
     def chase(self):
-        # Placeholder: enemy stands still when chasing
+        # If player is clearly visible, shoot at them
+        if self.player_seen_clearly:
+            current_time = pygame.time.get_ticks()
+            if current_time - self.last_shot_time >= self.shooting_cooldown:
+                bullet = self.shoot_at_player()
+                if bullet:
+                    self.fired_bullets.append(bullet)
+                    self.last_shot_time = current_time
+        
         # TODO: Implement actual chase behavior with pathfinding to player
-        pass
+        # For now, just stand and shoot
 
     # inspect happens when the enemy is curious about a noise or movement
     def inspect(self):
@@ -145,6 +189,33 @@ class Enemy(pygame.sprite.Sprite):
             self.state = "patrol"
             self.distracted_timer = 0.0
 
+    def shoot_at_player(self):
+        """Create a bullet projectile aimed at the player"""
+        # Import here to avoid circular imports
+        from bottle import BulletProjectile
+        
+        # Calculate direction to aim at player
+        player_pos = pygame.Vector2(self.player_ref.rect.center)
+        enemy_pos = pygame.Vector2(self.position)
+        direction_vector = (player_pos - enemy_pos).normalize()
+        
+        # Determine the closest cardinal direction
+        if abs(direction_vector.x) > abs(direction_vector.y):
+            # More horizontal than vertical
+            direction = "right" if direction_vector.x > 0 else "left"
+        else:
+            # More vertical than horizontal  
+            direction = "down" if direction_vector.y > 0 else "up"
+        
+        # Create bullet projectile
+        bullet = BulletProjectile(
+            start_pos=self.position.copy(),
+            direction=direction,
+            speed=self.bullet_speed
+        )
+        
+        return bullet
+
 # AI STUFF============================================================================================================================
 
     # for HFSM 
@@ -158,9 +229,13 @@ class Enemy(pygame.sprite.Sprite):
         if self.state == "patrol":
             if self.player_seen_clearly:
                 self.state = "chase"
+                self.show_state_icon("exclamation")
+                # Start bullet cooldown to prevent immediate shooting
+                self.last_shot_time = pygame.time.get_ticks()
                 print("Enemy: Spotted player clearly - entering chase mode!")
             elif self.player_glimpsed or self.sound_heard:
                 self.state = "inspect"
+                self.show_state_icon("question")
                 if self.player_glimpsed:
                     print("Enemy: Caught a glimpse of something - investigating...")
                 if self.sound_heard:
@@ -169,6 +244,9 @@ class Enemy(pygame.sprite.Sprite):
         elif self.state == "inspect":
             if self.player_seen_clearly:
                 self.state = "chase"
+                self.show_state_icon("exclamation")
+                # Start bullet cooldown to prevent immediate shooting
+                self.last_shot_time = pygame.time.get_ticks()
                 print("Enemy: Found the target - entering chase mode!")
             # inspect state will automatically return to patrol when reaching investigation point
         
@@ -347,6 +425,43 @@ class Enemy(pygame.sprite.Sprite):
         # Blit the vision cone to the screen
         screen.blit(cone_surface, (0, 0), special_flags=pygame.BLEND_ALPHA_SDL2)
 
+    def draw_state_icon(self, screen, map_layer):
+        """Draw the current state icon above the enemy if active"""
+        if not self.show_icon or not self.current_icon:
+            return
+            
+        # Get the actual camera position from the map layer
+        try:
+            camera_x = map_layer.view_rect.x
+            camera_y = map_layer.view_rect.y
+        except AttributeError:
+            try:
+                camera_x = map_layer.map_rect.x
+                camera_y = map_layer.map_rect.y
+            except AttributeError:
+                # Fallback: use the rect position directly
+                camera_x = 0
+                camera_y = 0
+        
+        # Calculate enemy's screen position using the actual camera position
+        enemy_screen_x = self.position.x - camera_x
+        enemy_screen_y = self.position.y - camera_y
+        
+        # Position icon above enemy (offset by 20 pixels up)
+        icon_x = enemy_screen_x - 8  # center the 16x16 icon
+        icon_y = enemy_screen_y - 20  # position above enemy
+        
+        # Select the appropriate icon
+        if self.current_icon == "exclamation":
+            icon = self.exclamation_icon
+        elif self.current_icon == "question":
+            icon = self.question_icon
+        else:
+            return  # unknown icon type
+            
+        # Draw the icon
+        screen.blit(icon, (icon_x, icon_y))
+
     # Check if the enemy can hear a thrown bottle (bottle sounds must last 333 ms so that it doesn't miss the hearing window)
     def check_hearing(self):
         self.sound_heard = False
@@ -455,6 +570,15 @@ class Enemy(pygame.sprite.Sprite):
 
     def update(self, dt):
         self.update_state_machine(dt)
+        
+        # Update icon timer
+        if self.show_icon:
+            self.icon_timer += dt
+            if self.icon_timer >= self.icon_duration:
+                self.show_icon = False
+                self.current_icon = None
+                self.icon_timer = 0.0
+        
         # For now, dx/dy are not used, but keep for animator compatibility
         dx, dy = 0, 0
         # If moving, calculate dx/dy for animation
