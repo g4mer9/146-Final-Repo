@@ -13,20 +13,19 @@ class EnemyAnimator:
         # animation sequence for soldier sprites: 0, 1, 0, 1...
         self.animation_sequence = [0, 1]
 
-    def update(self, enemy, dt, dx, dy):
+    def update(self, dt, dx, dy):
         """Update animation state based on enemy movement"""
         # determine if enemy is moving
         self.is_moving = dx != 0 or dy != 0
         
-        # update direction based on movement (prioritize vertical movement)
-        if dy > 0:
-            self.current_direction = "down"
-        elif dy < 0:
-            self.current_direction = "up"
-        elif dx > 0:
-            self.current_direction = "right"
-        elif dx < 0:
-            self.current_direction = "left"
+        # choose facing based on dominant axis of movement (fix for left/right never showing)
+        if self.is_moving:
+            if abs(dx) > abs(dy):
+                # horizontal dominant
+                self.current_direction = "right" if dx > 0 else "left"
+            else:
+                # vertical dominant
+                self.current_direction = "down" if dy > 0 else "up"
             
         # update animation only if moving
         if self.is_moving:

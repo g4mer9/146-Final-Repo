@@ -33,11 +33,13 @@ class Enemy(pygame.sprite.Sprite):
         # ADJUSTABLE ENEMY PARAMETERS =====================================================
         self.hearing_range = 120      # range in pixels for hearing sounds (adjustable)
         self.sight_range = 60       # range in pixels for vision cone (adjustable)
-        self.vision_cone_angle = 60  # total angle of vision cone in degrees (adjustable)
+        self.vision_cone_angle = 90  # total angle of vision cone in degrees (adjustable)
         self.attack_range = 5
         self.bullet_speed = 150  # increased from 15 to 150 for reasonable bullet speed
         self.ms_between_AI_checks = 333
         self.last_AI_check = 0
+        self.patrol_speed = 50
+        self.chase_speed = 80
         
         # Shooting mechanics
         self.shooting_cooldown = 1000  # milliseconds between shots
@@ -212,8 +214,16 @@ class Enemy(pygame.sprite.Sprite):
 
 
     def update(self, dt):
-        self.update_state_machine(dt)
+        # Capture previous position so we know true movement after behaviors run
+        prev_x, prev_y = self.position.x, self.position.y
         
+        # Run state machine (this may move the enemy via behaviors + collision handling)
+        self.update_state_machine(dt)
+
+        # Compute actual movement delta from behaviors
+        dx = self.position.x - prev_x
+        dy = self.position.y - prev_y
+
         # Update icon timer
         if self.show_icon:
             self.icon_timer += dt
@@ -221,21 +231,22 @@ class Enemy(pygame.sprite.Sprite):
                 self.show_icon = False
                 self.current_icon = None
                 self.icon_timer = 0.0
-        
-        # For now, dx/dy are not used, but keep for animator compatibility
-        dx, dy = 0, 0
-        # If moving, calculate dx/dy for animation
-        if self.path:
-            target = self.path[0]
-            direction = pygame.Vector2(target) - self.position
-            if direction.length() > 1:
-                direction = direction.normalize()
-                speed = 50
-                move = direction * speed * dt
-                dx, dy = move.x, move.y
-        self.animator.update(self, dt, dx, dy)
-        # Update the sprite image
+
+        # If we're chasing but not moving (e.g. reached player / blocked), still face the player
+        if self.state == "chase" and abs(dx) < 0.01 and abs(dy) < 0.01:
+            target_vec = pygame.Vector2(self.player_ref.rect.center) - self.position
+            if target_vec.length() > 0.1:
+                if abs(target_vec.x) > abs(target_vec.y):
+                    self.animator.current_direction = "right" if target_vec.x > 0 else "left"
+                else:
+                    self.animator.current_direction = "down" if target_vec.y > 0 else "up"
+
+        # Feed actual movement delta to animator
+        self.animator.update(dt, dx, dy)
+
+        # Update the sprite image & rect (rect already generally updated in collision handler, but ensure sync)
         self.image = self.animator.get_current_sprite(self.sprites)
+        self.rect.center = (int(self.position.x), int(self.position.y))
 
     def update_state_machine(self, dt):
         # Store dt for use in behaviors

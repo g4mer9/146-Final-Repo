@@ -25,7 +25,7 @@ class EnemyBehaviors:
                 self.enemy.path.pop(0)
             else:
                 direction = direction.normalize()
-                speed = 50  # basic patrol speed
+                speed = self.enemy.patrol_speed  # basic patrol speed
                 move = direction * speed * self.enemy.dt
                 # Use collision handling instead of direct position update
                 self.enemy.handle_collisions(move.x, move.y)
@@ -50,7 +50,7 @@ class EnemyBehaviors:
         distance = direction.length()
         if distance > 2:
             direction = direction.normalize()
-            speed = 80  # Faster than patrol speed
+            speed = self.enemy.chase_speed  # Faster than patrol speed
             move = direction * speed * self.enemy.dt
             self.enemy.handle_collisions(move.x, move.y)
 
@@ -88,7 +88,7 @@ class EnemyBehaviors:
             distance = direction.length()
             if distance > 2:
                 direction = direction.normalize()
-                speed = 50 # same as patrol speed
+                speed = self.enemy.patrol_speed  # same as patrol speed
                 move = direction * speed * self.enemy.dt
                 self.enemy.handle_collisions(move.x, move.y)
                 # Reset timer until enemy arrives at distraction
@@ -179,7 +179,7 @@ class EnemyBehaviors:
             if not self.enemy.player_seen_clearly:
                 # Could add a timer here before transitioning to camp
                 pass
-        
+            
         # Reset detection flags after processing
         if not (self.enemy.player_seen_clearly or self.enemy.player_glimpsed or self.enemy.sound_heard):
             # No immediate threats detected

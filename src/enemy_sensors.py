@@ -55,6 +55,8 @@ class EnemySensors:
                 if self.enemy.player_ref.trees or self.enemy.player_ref.locker or self.enemy.player_ref.box:
                     # Player is hidden but we caught a glimpse
                     self.enemy.player_glimpsed = True
+                    # Update last known position even for glimpses
+                    self.enemy.last_known_player_position = (player_pos.x, player_pos.y)
                 else:
                     # Player is clearly seen
                     self.enemy.player_seen_clearly = True
