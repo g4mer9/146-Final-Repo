@@ -19,6 +19,7 @@ class EnemyAnimator:
         self.is_moving = dx != 0 or dy != 0
         
         # choose facing based on dominant axis of movement (fix for left/right never showing)
+        # only update direction based on movement if actually moving
         if self.is_moving:
             if abs(dx) > abs(dy):
                 # horizontal dominant
@@ -33,6 +34,11 @@ class EnemyAnimator:
             if self.animation_timer >= self.animation_speed:
                 self.animation_timer = 0.0
                 self.current_frame_index = (self.current_frame_index + 1) % len(self.animation_sequence)
+    
+    def set_facing_direction(self, direction):
+        """Manually set the facing direction (useful for chase behavior when not moving)"""
+        if direction in ["up", "down", "left", "right"]:
+            self.current_direction = direction
     
     def get_current_sprite(self, sprites):
         """Get the current sprite frame based on animation state"""

@@ -71,6 +71,8 @@ class EnemyBehaviors:
             self.enemy.inspect_timer = 0.0
             self.enemy.last_known_player_position = None
 
+
+    # when camp ends, A* needs to be called from current pos to start of set patrol path
     def camp(self):
         """Camp behavior - enemy stays at last known player location"""
         # Placeholder: enemy stands still when camping
@@ -143,6 +145,8 @@ class EnemyBehaviors:
             y = random.randint(min_y, max_y)
             self.enemy.path.append((x, y))
 
+
+    # TODO: allow enemy to lose track of the player if x seconds pass without seeing/hearing while in chase state, go into camp
     def check_transitions(self):
         """Check for state transitions based on sensor input"""
         # Update vision and hearing

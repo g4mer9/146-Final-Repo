@@ -232,17 +232,22 @@ class Enemy(pygame.sprite.Sprite):
                 self.current_icon = None
                 self.icon_timer = 0.0
 
-        # If we're chasing but not moving (e.g. reached player / blocked), still face the player
-        if self.state == "chase" and abs(dx) < 0.01 and abs(dy) < 0.01:
+        # Feed actual movement delta to animator (this will update direction based on movement if moving)
+        self.animator.update(dt, dx, dy)
+        
+        # If we're chasing, always face the player regardless of actual movement
+        # This must come AFTER animator.update() to override movement-based direction
+        if self.state == "chase":
             target_vec = pygame.Vector2(self.player_ref.rect.center) - self.position
             if target_vec.length() > 0.1:
+                # Determine facing direction based on direction to player
                 if abs(target_vec.x) > abs(target_vec.y):
-                    self.animator.current_direction = "right" if target_vec.x > 0 else "left"
+                    desired_direction = "right" if target_vec.x > 0 else "left"
                 else:
-                    self.animator.current_direction = "down" if target_vec.y > 0 else "up"
-
-        # Feed actual movement delta to animator
-        self.animator.update(dt, dx, dy)
+                    desired_direction = "down" if target_vec.y > 0 else "up"
+                
+                # Use the new method to set facing direction
+                self.animator.set_facing_direction(desired_direction)
 
         # Update the sprite image & rect (rect already generally updated in collision handler, but ensure sync)
         self.image = self.animator.get_current_sprite(self.sprites)
