@@ -8,6 +8,7 @@ class EnemyBehaviors:
     def __init__(self, enemy):
         self.enemy = enemy
     
+    # TODO: create set patrol paths depending on their spawn position instead of random
     def patrol(self):
         """Patrol behavior - enemy follows patrol path"""
         # If no patrol path, generate a new random path
@@ -29,6 +30,8 @@ class EnemyBehaviors:
                 # Use collision handling instead of direct position update
                 self.enemy.handle_collisions(move.x, move.y)
 
+    # TODO: use A* pathfinding to player. 
+    # use tile.is_tile_slow() to find slow tiles, and give them weight of 3 instead of 1. walls give weight of 100+ or inf
     def chase(self):
         """Chase behavior - enemy pursues and shoots at player"""
         # If player is clearly visible, shoot at them
@@ -40,8 +43,7 @@ class EnemyBehaviors:
                     self.enemy.fired_bullets.append(bullet)
                     self.enemy.last_shot_time = current_time
         
-        # TODO: Implement actual chase behavior with pathfinding to player
-        # For now, just stand and shoot
+        # later needs to be A* pathfinding instead of direct movement
         player_pos = pygame.Vector2(self.enemy.player_ref.rect.center)
         enemy_pos = pygame.Vector2(self.enemy.position)
         direction = player_pos - enemy_pos
@@ -52,6 +54,9 @@ class EnemyBehaviors:
             move = direction * speed * self.enemy.dt
             self.enemy.handle_collisions(move.x, move.y)
 
+    # TODO: start timer only after A* pathfinding towards sound/seen player and destination reached
+    # keep in mind, if the destination is a player in a box, a rand call should decide whether to enter chase or return to patrol
+    # (also disable player.box)
     def inspect(self):
         """Inspect behavior - enemy investigates disturbances"""
         # Placeholder: enemy stands still when investigating
@@ -75,9 +80,7 @@ class EnemyBehaviors:
 
     def distracted(self):
         """Distracted behavior - enemy is distracted by books"""
-        # Placeholder: enemy stands still when distracted
-        # TODO: Implement distraction behavior (moving towards book, reading it)
-        # TODO: Add timer to return to previous state after 30 seconds
+
         if hasattr(self.enemy, 'distraction_position') and self.enemy.distraction_position is not None:
             target = pygame.Vector2(self.enemy.distraction_position)
             enemy_pos = pygame.Vector2(self.enemy.position)
