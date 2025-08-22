@@ -42,6 +42,15 @@ class EnemyBehaviors:
         
         # TODO: Implement actual chase behavior with pathfinding to player
         # For now, just stand and shoot
+        player_pos = pygame.Vector2(self.enemy.player_ref.rect.center)
+        enemy_pos = pygame.Vector2(self.enemy.position)
+        direction = player_pos - enemy_pos
+        distance = direction.length()
+        if distance > 2:
+            direction = direction.normalize()
+            speed = 80  # Faster than patrol speed
+            move = direction * speed * self.enemy.dt
+            self.enemy.handle_collisions(move.x, move.y)
 
     def inspect(self):
         """Inspect behavior - enemy investigates disturbances"""
@@ -69,6 +78,20 @@ class EnemyBehaviors:
         # Placeholder: enemy stands still when distracted
         # TODO: Implement distraction behavior (moving towards book, reading it)
         # TODO: Add timer to return to previous state after 30 seconds
+        if hasattr(self.enemy, 'distraction_position') and self.enemy.distraction_position is not None:
+            target = pygame.Vector2(self.enemy.distraction_position)
+            enemy_pos = pygame.Vector2(self.enemy.position)
+            direction = target - enemy_pos
+            distance = direction.length()
+            if distance > 2:
+                direction = direction.normalize()
+                speed = 50 # same as patrol speed
+                move = direction * speed * self.enemy.dt
+                self.enemy.handle_collisions(move.x, move.y)
+                # Reset timer until enemy arrives at distraction
+                self.enemy.distracted_timer = 0.0
+                return # Don't start timer until arrived
+        
         if not hasattr(self.enemy, 'distracted_timer'):
             self.enemy.distracted_timer = 0.0
         
@@ -76,6 +99,7 @@ class EnemyBehaviors:
         if self.enemy.distracted_timer >= 30.0:  # distracted for 30 seconds then return to patrol
             self.enemy.state = "patrol"
             self.enemy.distracted_timer = 0.0
+            self.enemy.distraction_position = None
     
     def _shoot_at_player(self):
         """Create a bullet projectile aimed at the player"""
