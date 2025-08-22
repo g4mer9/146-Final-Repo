@@ -10,9 +10,45 @@ class EnemySensors:
         self.enemy = enemy
     
     def check_sight(self):
-        """Check if the enemy can see the player"""
+        """Check if the enemy can see the player or books"""
         self.enemy.player_seen_clearly = False
         self.enemy.player_glimpsed = False
+        self.enemy.book_spotted = False
+        
+        # Check for books within sight range
+        if self.enemy.items_group:
+            enemy_pos = pygame.Vector2(self.enemy.position)
+            for item in self.enemy.items_group:
+                if item.item_name == 'book':
+                    book_pos = pygame.Vector2(item.rect.center)
+                    distance_to_book = enemy_pos.distance_to(book_pos)
+                    
+                    # Check if book is within sight range
+                    if distance_to_book <= self.enemy.sight_range:
+                        # Check if book is in vision cone
+                        if distance_to_book < 0.1:  # very close
+                            self.enemy.book_spotted = True
+                            self.enemy.distraction_position = (book_pos.x, book_pos.y)
+                        else:
+                            direction_to_book = (book_pos - enemy_pos).normalize()
+                            enemy_facing = self._get_facing_direction()
+                            
+                            # Calculate angle between enemy facing direction and direction to book
+                            angle_to_book = math.degrees(math.atan2(direction_to_book.y, direction_to_book.x))
+                            enemy_facing_angle = math.degrees(math.atan2(enemy_facing.y, enemy_facing.x))
+                            
+                            # Normalize angles to 0-360 range
+                            angle_diff = abs(angle_to_book - enemy_facing_angle)
+                            if angle_diff > 180:
+                                angle_diff = 360 - angle_diff
+                            
+                            # Check if book is within vision cone
+                            if angle_diff <= self.enemy.vision_cone_angle / 2:
+                                # Book is in vision cone, now check for line of sight
+                                if self._has_line_of_sight(enemy_pos, book_pos):
+                                    self.enemy.book_spotted = True
+                                    self.enemy.distraction_position = (book_pos.x, book_pos.y)
+                                    break  # Only need to spot one book
         
         # Get player position
         player_pos = pygame.Vector2(self.enemy.player_ref.rect.center)

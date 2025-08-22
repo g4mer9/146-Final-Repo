@@ -11,22 +11,36 @@ class EnemyBehaviors:
     # TODO: create set patrol paths depending on their spawn position instead of random
     def patrol(self):
         """Patrol behavior - enemy follows patrol path"""
-        # If no patrol path, generate a new random path
+        # If no patrol path, use the predefined patrol path
         if not self.enemy.path:
-            self._generate_random_patrol_path()
+            self._set_next_patrol_point()
         
         # Move towards the next point in the path
         if self.enemy.path:
             target = self.enemy.path[0]
             direction = pygame.Vector2(target) - self.enemy.position
             distance = direction.length()
-            if distance < 2:
-                # Arrived at this point, pop it
+            
+            # Use a smaller arrival threshold so enemies get closer to patrol points
+            arrival_threshold = 1  # decreased from 2 to 1 pixel for more precise navigation
+            
+            if distance < arrival_threshold:
+                # Arrived at this point, pop it and move to next patrol point
                 self.enemy.path.pop(0)
+                if not self.enemy.path:  # if path is empty, set next patrol point
+                    self._advance_patrol_index()
+                    self._set_next_patrol_point()
             else:
                 direction = direction.normalize()
                 speed = self.enemy.patrol_speed  # basic patrol speed
                 move = direction * speed * self.enemy.dt
+                
+                # Add a small overshoot to help clear walls
+                # If we're close to the target, add extra momentum in the same direction
+                if distance < 20:  # when close to target
+                    overshoot_factor = 1.2  # move 20% faster to clear obstacles
+                    move *= overshoot_factor
+                
                 # Use collision handling instead of direct position update
                 self.enemy.handle_collisions(move.x, move.y)
 
@@ -133,8 +147,23 @@ class EnemyBehaviors:
         
         return bullet
     
+    def _set_next_patrol_point(self):
+        """Set the next patrol point as the current path destination"""
+        if hasattr(self.enemy, 'patrol_path_pixels') and self.enemy.patrol_path_pixels:
+            next_point = self.enemy.patrol_path_pixels[self.enemy.patrol_index]
+            self.enemy.path = [next_point]
+        else:
+            # Fallback to a default point if no patrol path is set
+            self.enemy.path = [(self.enemy.position.x + 32, self.enemy.position.y)]
+
+    def _advance_patrol_index(self):
+        """Move to the next point in the patrol path, wrapping around if necessary"""
+        if hasattr(self.enemy, 'patrol_path_pixels') and self.enemy.patrol_path_pixels:
+            self.enemy.patrol_index = (self.enemy.patrol_index + 1) % len(self.enemy.patrol_path_pixels)
+
     def _generate_random_patrol_path(self):
-        """Generate a random walkable path for debugging purposes"""
+        """Generate a random walkable path for debugging purposes (deprecated - use set patrol paths instead)"""
+        # This method is kept for backward compatibility but should not be used
         # Map bounds (hardcoded for now, should match your map size)
         min_x, max_x = 32, 400
         min_y, max_y = 32, 200
@@ -161,6 +190,10 @@ class EnemyBehaviors:
                 # Start bullet cooldown to prevent immediate shooting
                 self.enemy.last_shot_time = pygame.time.get_ticks()
                 print("Enemy: Spotted player clearly - entering chase mode!")
+            elif hasattr(self.enemy, 'book_spotted') and self.enemy.book_spotted:
+                self.enemy.state = "distracted"
+                self.enemy.show_state_icon("question")
+                print("Enemy: Spotted a book - getting distracted...")
             elif self.enemy.player_glimpsed or self.enemy.sound_heard:
                 self.enemy.state = "inspect"
                 self.enemy.show_state_icon("question")

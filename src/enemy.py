@@ -7,11 +7,12 @@ from enemy_renderer import EnemyRenderer
 from enemy_sensors import EnemySensors
 
 class Enemy(pygame.sprite.Sprite):
-    def __init__(self, position, player_ref, collision_rects):
+    def __init__(self, position, player_ref, collision_rects, patrol_path=None, items_group=None):
         super().__init__()
         self.position = pygame.Vector2(position)
         self.player_ref = player_ref
         self.collision_rects = collision_rects
+        self.items_group = items_group
         
         # Initialize modular components
         self.animator = EnemyAnimator()
@@ -27,8 +28,12 @@ class Enemy(pygame.sprite.Sprite):
         self.tiles = None
         self.tile_size = 16
 
-        self.patrol_POIs = []
+        # Set up patrol path
+        self.patrol_path_tiles = patrol_path or [(15, 30), (20, 30), (20, 35), (15, 35)]  # default patrol
         self.patrol_index = 0
+        self._convert_patrol_path_to_pixels()
+
+        self.patrol_POIs = []
 
         # ADJUSTABLE ENEMY PARAMETERS =====================================================
         self.hearing_range = 120      # range in pixels for hearing sounds (adjustable)
@@ -50,7 +55,9 @@ class Enemy(pygame.sprite.Sprite):
         self.player_seen_clearly = False
         self.player_glimpsed = False
         self.sound_heard = False
+        self.book_spotted = False
         self.last_known_player_position = None
+        self.distraction_position = None
 
         # ADD NEW STATES HERE============================================================================================================================
         self.state = "patrol"
@@ -262,6 +269,23 @@ class Enemy(pygame.sprite.Sprite):
             self.last_AI_check = current_time
             # Use behaviors component for state transitions
             self.behaviors.check_transitions()
-
+        
+        # Execute the current state behavior every frame
         if self.state in self.states:
             self.states[self.state]()
+
+    def _convert_patrol_path_to_pixels(self):
+        """Convert tile coordinates to pixel coordinates for patrol path"""
+        self.patrol_path_pixels = []
+        for tile_x, tile_y in self.patrol_path_tiles:
+            pixel_x = tile_x * self.tile_size + 8  # +8 to center on tile
+            pixel_y = tile_y * self.tile_size + 8
+            self.patrol_path_pixels.append((pixel_x, pixel_y))
+
+    def set_patrol_path(self, new_patrol_path):
+        """Set a new patrol path for this enemy (in tile coordinates)"""
+        self.patrol_path_tiles = new_patrol_path
+        self.patrol_index = 0
+        self._convert_patrol_path_to_pixels()
+        # Reset current path to start using new patrol path
+        self.path = []

@@ -87,12 +87,25 @@ enemy_spawn_tiles = [
     (36, 40)
 ]
 
+# define patrol paths for each enemy (in tile coordinates)
+enemy_patrol_paths = [
+    [(15, 30), (15, 36), (33, 36), (33, 30), (15, 30), (15, 24), (33, 24), (33, 30)],  # enemy 0 - room 1
+    [(33, 30), (33, 24), (15, 24), (15, 30), (33, 30), (33, 36), (15, 36), (15, 30)],  # enemy 1 - room 1
+    [(12, 20), (12, 40), (36, 40), (36, 20)],  # enemy 2 - outside 1
+    [(36, 20), (12, 20), (12, 40), (36, 40)],  # enemy 3 - outside 1
+    [(32, 45), (35, 45), (35, 50), (32, 50)],  # enemy 4 - small square
+    [(15, 56), (20, 56), (20, 60), (15, 60)],  # enemy 5 - square patrol
+    [(12, 40), (17, 40), (17, 45), (12, 45)],  # enemy 6 - square patrol
+    [(36, 40), (41, 40), (41, 35), (36, 35)]   # enemy 7 - square patrol
+]
+
 enemy_spawn_positions = [
     (tile[0] * 16 + 8, tile[1] * 16 + 8) for tile in enemy_spawn_tiles
 ]
 
-for enemy_pos in enemy_spawn_positions:
-    enemy = Enemy(enemy_pos, game_player, collision_rects)
+for i, enemy_pos in enumerate(enemy_spawn_positions):
+    patrol_path = enemy_patrol_paths[i] if i < len(enemy_patrol_paths) else enemy_patrol_paths[0]
+    enemy = Enemy(enemy_pos, game_player, collision_rects, patrol_path, items_group)
     enemies_group.add(enemy)
     # add enemy to camera group on layer 1 (above items, below player)
     camera_group.add(enemy, layer=1)
@@ -249,33 +262,73 @@ while running:
         if collision_result == "player_hit":
             # Player was hit by bullet - reset the game
             print("Player hit by bullet! Resetting game...")
-            # Reset player position
+            # Reset player position and state
             game_player.position = pygame.Vector2(player_start_pos)
             game_player.rect.center = player_start_pos
+            game_player.box = False
+            game_player.trees = False
+            game_player.locker = False
+            game_player.bottle = False
+            game_player.book = False
+            game_player.moveable = True
+            game_player.speed_modifier = 1.0
+            game_player.box_animation_active = False
+            game_player.locker_animation_active = False
             # Remove all bullets
             for b in bullet_projectiles_group:
                 camera_group.remove(b)
             bullet_projectiles_group.empty()
+            # Remove all bottle projectiles
+            for bottle in bottle_projectiles_group:
+                camera_group.remove(bottle)
+            bottle_projectiles_group.empty()
             # Reset all enemies to their starting positions and states
             for i, enemy in enumerate(enemies_group):
+                # Reset position
                 enemy.position = pygame.Vector2(enemy_spawn_positions[i])
                 enemy.rect.center = enemy_spawn_positions[i]
+                
+                # Reset state machine
                 enemy.state = "patrol"
                 enemy.path = []
+                
+                # Reset patrol path - restore original patrol path for this enemy
+                patrol_path = enemy_patrol_paths[i] if i < len(enemy_patrol_paths) else enemy_patrol_paths[0]
+                enemy.patrol_path_tiles = patrol_path
+                enemy.patrol_index = 0
+                enemy._convert_patrol_path_to_pixels()
+                
+                # Reset detection flags
                 enemy.player_seen_clearly = False
                 enemy.player_glimpsed = False
                 enemy.sound_heard = False
+                enemy.book_spotted = False
                 enemy.last_known_player_position = None
+                enemy.distraction_position = None
+                
+                # Reset combat
                 enemy.fired_bullets.clear()
+                enemy.last_shot_time = 0
+                
+                # Reset AI timing
+                enemy.last_AI_check = 0
+                
+                # Reset icons
                 enemy.show_icon = False
                 enemy.icon_timer = 0.0
                 enemy.current_icon = None
-                # Reset any timers
+                
+                # Reset all behavior timers
                 if hasattr(enemy, 'inspect_timer'):
                     enemy.inspect_timer = 0.0
                 if hasattr(enemy, 'distracted_timer'):
                     enemy.distracted_timer = 0.0
-                enemy.last_shot_time = 0
+                
+                # Reset animator to default state
+                enemy.animator.current_direction = "down"
+                enemy.animator.current_frame_index = 0
+                enemy.animator.animation_timer = 0.0
+                enemy.image = enemy.sprites["down"][0]
             bullets_to_remove.clear()
             break
         elif collision_result == "wall_hit":
