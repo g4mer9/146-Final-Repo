@@ -76,6 +76,20 @@ class EnemyBehaviors:
         # Placeholder: enemy stands still when investigating
         # TODO: Implement movement towards last known position/sound location
         # For now, just transition back to patrol after a delay
+        if hasattr(self.enemy, 'last_known_player_position') and self.enemy.last_known_player_position is not None:
+            target = pygame.Vector2(self.enemy.last_known_player_position)
+            enemy_pos = pygame.Vector2(self.enemy.position)
+            direction = target - enemy_pos
+            distance = direction.length()
+            if distance > 2:
+                direction = direction.normalize()
+                speed = self.enemy.patrol_speed  # same as patrol speed
+                move = direction * speed * self.enemy.dt
+                self.enemy.handle_collisions(move.x, move.y)
+                # Reset timer until enemy arrives at camp spot
+                self.enemy.inspect_timer = 0.0
+                return # Don't start timer until arrived
+        
         if not hasattr(self.enemy, 'inspect_timer'):
             self.enemy.inspect_timer = 0.0
         
@@ -92,7 +106,28 @@ class EnemyBehaviors:
         # Placeholder: enemy stands still when camping
         # TODO: Implement camping behavior with occasional turning/looking around
         # TODO: Add timer to return to patrol after losing player for too long
-        pass
+        if hasattr(self.enemy, 'last_known_player_position') and self.enemy.last_known_player_position is not None:
+            target = pygame.Vector2(self.enemy.last_known_player_position)
+            enemy_pos = pygame.Vector2(self.enemy.position)
+            direction = target - enemy_pos
+            distance = direction.length()
+            if distance > 2:
+                direction = direction.normalize()
+                speed = self.enemy.patrol_speed  # same as patrol speed
+                move = direction * speed * self.enemy.dt
+                self.enemy.handle_collisions(move.x, move.y)
+                # Reset timer until enemy arrives at camp spot
+                self.enemy.camp_timer = 0.0
+                return # Don't start timer until arrived
+        
+        if not hasattr(self.enemy, 'camp_timer'):
+            self.enemy.camp_timer = 0.0
+        
+        self.enemy.camp_timer += self.enemy.dt
+        if self.enemy.camp_timer >= 5.0:  # distracted for 30 seconds then return to patrol
+            self.enemy.state = "patrol"
+            self.enemy.camp_timer = 0.0
+            self.enemy.last_known_player_position = None
 
     def distracted(self):
         """Distracted behavior - enemy is distracted by books"""
