@@ -1,5 +1,6 @@
 import pygame
 import random
+import heapq
 
 
 class EnemyBehaviors:
@@ -7,6 +8,62 @@ class EnemyBehaviors:
     
     def __init__(self, enemy):
         self.enemy = enemy
+        self.prev_pathfind_length = 0
+        self.current_path = []
+        self.pathfind_cooldown = 500 
+
+    """A* with 8 directions for better agent movement"""
+    def _a_star_pathfind(self, start_position, goal_position, tile_size = 32):
+        start_grid = (int(start_position.x // tile_size), int(start_position.y // tile_size))
+        goal_grid = (int(goal_position.x // tile_size), int(goal_position.y // tile_size))
+        
+        # 8-directional movement and cost
+        directions = [(0,1), (0,-1), (1,0), (-1,0), (1,1), (1,-1), (-1,1), (-1,-1)]
+        diagonal_cost = 1.414
+        
+        priorityqueue = [(0, 0, start_grid, [(start_position.x, start_position.y)])]
+        pathfinding = set()
+        
+        while priorityqueue:
+            _, goal_cost, current, path = heapq.heappop(priorityqueue)
+            
+            if current in pathfinding:
+                continue
+            pathfinding.add(current)
+            
+            if current == goal_grid:
+                return [pygame.Vector2(pos) for pos in path[1:]]
+            
+            for diagonal_x, diagonal_y in directions:
+                neighbor = (current[0] + diagonal_x, current[1] + diagonal_y)
+                
+                if neighbor in pathfinding:
+                    continue
+                
+                # Check for diagonal corner cutting so the agents don't clip thru walls
+                if diagonal_x != 0 and diagonal_y != 0:
+                    if (self._get_tile_weight(current[0] + diagonal_x, current[1]) == float('inf') or 
+                        self._get_tile_weight(current[0], current[1] + diagonal_y) == float('inf')):
+                        continue
+                
+                move_cost = self._get_tile_weight(neighbor[0], neighbor[1])
+                if move_cost == float('inf'):
+                    continue
+
+                # Add in diagonal cost
+                if diagonal_x != 0 and diagonal_y != 0:
+                    move_cost *= diagonal_cost
+                
+                new_goal_cost = goal_cost + move_cost
+                h_cost = abs(neighbor[0] - goal_grid[0]) + abs(neighbor[1] - goal_grid[1])
+                
+                neighbor_pos = (neighbor[0] * tile_size + tile_size // 2,
+                            neighbor[1] * tile_size + tile_size // 2)
+                
+                heapq.heappush(priorityqueue, (new_goal_cost + h_cost, new_goal_cost,\
+                                               neighbor, path + [neighbor_pos]))
+        
+        return []
     
     # TODO: create set patrol paths depending on their spawn position instead of random
     def patrol(self):
@@ -44,29 +101,83 @@ class EnemyBehaviors:
                 # Use collision handling instead of direct position update
                 self.enemy.handle_collisions(move.x, move.y)
 
+    def _get_tile_weight(self, grid_x, grid_y):
+        """Tile weight helper func for A* 
+        Get movement cost for a tile position"""
+        try:
+            if not hasattr(self.enemy, 'game_map'):
+                return 1  # Fallback case
+            
+            tile = self.enemy.game_map.get_tile(grid_x, grid_y)
+            if tile is None or tile.is_wall():
+                return float('inf')
+            return 3 if tile.is_tile_slow() else 1
+        except:
+            return float('inf')
+
+
+
     # TODO: use A* pathfinding to player. 
     # use tile.is_tile_slow() to find slow tiles, and give them weight of 3 instead of 1. walls give weight of 100+ or inf
     def chase(self):
-        """Chase behavior - enemy pursues and shoots at player"""
-        # If player is clearly visible, shoot at them
+        """Chase behavior - enemy pursues and shoots at player now with A* pathfinding"""
+        # In line of sight assault
         if self.enemy.player_seen_clearly:
             current_time = pygame.time.get_ticks()
             if current_time - self.enemy.last_shot_time >= self.enemy.shooting_cooldown:
-                bullet = self._shoot_at_player()
-                if bullet:
+                if bullet := self._shoot_at_player():
                     self.enemy.fired_bullets.append(bullet)
                     self.enemy.last_shot_time = current_time
         
-        # later needs to be A* pathfinding instead of direct movement
+        # Pathfinding logic
+        current_time = pygame.time.get_ticks() #need curr time to check against prev_pathfind_length
         player_pos = pygame.Vector2(self.enemy.player_ref.rect.center)
         enemy_pos = pygame.Vector2(self.enemy.position)
-        direction = player_pos - enemy_pos
-        distance = direction.length()
-        if distance > 2:
-            direction = direction.normalize()
-            speed = self.enemy.chase_speed  # Faster than patrol speed
-            move = direction * speed * self.enemy.dt
+        
+        # Path recalculation if cooldown pass
+        if (current_time - self.prev_pathfind_length >= self.pathfind_cooldown or not self.current_path):
+            self.current_path = self._a_star_pathfind(enemy_pos, player_pos)
+            self.prev_pathfind_length = current_time
+            
+            # Back to direct movement if no path presented
+            if not self.current_path:
+                self._move_directly_to_target(player_pos, enemy_pos)
+                return
+        
+        # Follow through with path and send to helper
+        self._follow_path(enemy_pos)
+
+    def _move_directly_to_target(self, target_pos, current_pos):
+        """Direct movement - helper method when no path given"""
+        direction = target_pos - current_pos
+        if direction.length() > 2:
+            move = direction.normalize() * self.enemy.chase_speed * self.enemy.dt
             self.enemy.handle_collisions(move.x, move.y)
+
+    def _follow_path(self, enemy_pos):
+        """Path execution helper method"""
+        if not self.current_path:
+            return
+        
+        target = self.current_path[0]
+        direction = pygame.Vector2(target) - enemy_pos
+        distance = direction.length()
+        
+        # Move to next waypoint if close enough
+        if distance < 5:
+            self.current_path.pop(0)
+            if not self.current_path:
+                return
+            target = self.current_path[0]
+            direction = pygame.Vector2(target) - enemy_pos
+            distance = direction.length()
+        
+        # Move towards waypoint
+        if distance > 2:
+            move = direction.normalize() * self.enemy.chase_speed * self.enemy.dt
+            self.enemy.handle_collisions(move.x, move.y)
+
+    
 
     # TODO: start timer only after A* pathfinding towards sound/seen player and destination reached
     # keep in mind, if the destination is a player in a box, a rand call should decide whether to enter chase or return to patrol
