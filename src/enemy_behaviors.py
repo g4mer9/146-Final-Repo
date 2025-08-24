@@ -147,6 +147,18 @@ class EnemyBehaviors:
         # Follow through with path and send to helper
         self._follow_path(enemy_pos)
 
+        #transition to camp if lost player
+        if not self.enemy.player_seen_clearly:
+            if not hasattr(self.enemy, 'lost_player_timer'):
+                self.enemy.lost_player_timer = 0.0
+            self.enemy.lost_player_timer += self.enemy.dt
+
+            if self.enemy.lost_player_timer >= 5.0: #camp if havent found player in 5s
+                self.enemy.state = "camp"
+                self.enemy.show_state_icon("question")
+                print("Enemy: Lost player during chase - camping where player was last seen...")
+                self.enemy.lost_player_timer= 0.0
+
     def _move_directly_to_target(self, target_pos, current_pos):
         """Direct movement - helper method when no path given"""
         direction = target_pos - current_pos
@@ -192,23 +204,51 @@ class EnemyBehaviors:
             enemy_pos = pygame.Vector2(self.enemy.position)
             direction = target - enemy_pos
             distance = direction.length()
-            if distance > 2:
+            if distance > 1:
                 direction = direction.normalize()
                 speed = self.enemy.patrol_speed  # same as patrol speed
                 move = direction * speed * self.enemy.dt
                 self.enemy.handle_collisions(move.x, move.y)
                 # Reset timer until enemy arrives at camp spot
+                
+
+        if not hasattr(self.enemy, 'last_box_position'):
+            self.enemy.last_box_position = pygame.Vector2(self.enemy.player_ref.rect.center)
+
+        #checking if the enemy is inspecting the box, then chase/shoot if the box is moving  
+        if self.enemy.player_ref.box:
+                box_position = pygame.Vector2(self.enemy.player_ref.rect.center)
+
+                if abs((box_position - self.enemy.last_box_position).length()) > 1: 
+                    print('Enemy: Box Moved! Player is inside! Shooting and chasing!')
+                    self.enemy.player_seen_clearly = True
+                    self.enemy.state = "chase"
+                    self.enemy.show_state_icon("exclamation")
+                    self.enemy.last_known_player_position = (box_position.x, box_position.y)
+                    self.enemy.box_still_timer = 0.0
+                #if the box hasn't moved
+                else: 
+                    if not hasattr(self.enemy, 'box_timer_start') or self.enemy.box_timer_start is None:
+                        self.enemy.box_timer_start = pygame.time.get_ticks()
+                                     
+                    elapsed_time = (pygame.time.get_ticks() - self.enemy.box_timer_start)
+                    if elapsed_time >= 3000: #the box hasnt moved in a while
+                        self.enemy.state = "patrol"
+                        self.enemy.inspect_timer = 0.0
+                        self.enemy.last_known_player_position = None
+                        self.enemy.box_still_timer = 0.0
+                
+                self.enemy.last_box_position = box_position
+                
+        #counting in ms, so 3000 is 3 seconds, return to patrolling after inspecting for 3 seconds
+        else:
+            if not hasattr(self.enemy, 'inspect_timer_start') or self.enemy.inspect_timer_start is None:
+                self.enemy.inspect_timer_start = pygame.time.get_ticks()
+            elapsed_inspect_timer = (pygame.time.get_ticks() - self.enemy.inspect_timer_start)
+            if elapsed_inspect_timer >= 3000:  # investigate for 3 seconds then return to patrol
+                self.enemy.state = "patrol"
                 self.enemy.inspect_timer = 0.0
-                return # Don't start timer until arrived
-        
-        if not hasattr(self.enemy, 'inspect_timer'):
-            self.enemy.inspect_timer = 0.0
-        
-        self.enemy.inspect_timer += self.enemy.dt
-        if self.enemy.inspect_timer >= 3.0:  # investigate for 3 seconds then return to patrol
-            self.enemy.state = "patrol"
-            self.enemy.inspect_timer = 0.0
-            self.enemy.last_known_player_position = None
+                self.enemy.last_known_player_position = None
 
 
     # when camp ends, A* needs to be called from current pos to start of set patrol path
@@ -217,28 +257,51 @@ class EnemyBehaviors:
         # Placeholder: enemy stands still when camping
         # TODO: Implement camping behavior with occasional turning/looking around
         # TODO: Add timer to return to patrol after losing player for too long
-        if hasattr(self.enemy, 'last_known_player_position') and self.enemy.last_known_player_position is not None:
-            target = pygame.Vector2(self.enemy.last_known_player_position)
-            enemy_pos = pygame.Vector2(self.enemy.position)
-            direction = target - enemy_pos
-            distance = direction.length()
-            if distance > 2:
-                direction = direction.normalize()
-                speed = self.enemy.patrol_speed  # same as patrol speed
-                move = direction * speed * self.enemy.dt
-                self.enemy.handle_collisions(move.x, move.y)
-                # Reset timer until enemy arrives at camp spot
-                self.enemy.camp_timer = 0.0
-                return # Don't start timer until arrived
+        #chase from where camping if player seen
+        if self.enemy.player_seen_clearly:
+            self.enemy.state = "chase"
+            self.enemy.show_state_icon("exclamation")
+            self.enemy.last_shot_time = pygame.time.get_ticks()
+            return
+        if not hasattr(self.enemy, 'camp_origin') or self.enemy.camp_origin is None:
+            self.enemy.camp_origin = pygame.Vector2(self.enemy.position)
+            self.enemy.camp_index = 0
+            self.enemy.time_camped = None
         
-        if not hasattr(self.enemy, 'camp_timer'):
-            self.enemy.camp_timer = 0.0
+        #stop in tracks when lose sight of player and paces the area
+        pacing = [
+                pygame.Vector2(0 -80),
+                pygame.Vector2(0, 80),
+                pygame.Vector2(-80,0),
+                pygame.Vector2(80,0),
+            ]
+
+        target = self.enemy.camp_origin + pacing[self.enemy.camp_index]
+        enemy_pos = pygame.Vector2(self.enemy.position)
+        direction = target - enemy_pos
+        distance = direction.length()
+
+        if distance > 1:
+            direction = direction.normalize()
+            speed = self.enemy.patrol_speed
+            move = direction * speed * self.enemy.dt
+            self.enemy.handle_collisions(move.x, move.y)
+        else:
+            self.enemy.camp_index += 1
+            if self.enemy.camp_index >= len(pacing):
+                self.enemy.time_camped = pygame.time.get_ticks()
         
-        self.enemy.camp_timer += self.enemy.dt
-        if self.enemy.camp_timer >= 5.0:  # distracted for 30 seconds then return to patrol
-            self.enemy.state = "patrol"
-            self.enemy.camp_timer = 0.0
-            self.enemy.last_known_player_position = None
+        if self.enemy.camp_index >= len(pacing):
+            if self.enemy.time_camped is not None:
+
+                if pygame.time.get_ticks() - self.enemy.time_camped > 10000:
+                    patrol_start = pygame.Vector2(self.enemy.patrol_path_pixels[0])
+                    self.current_path = self._a_star_pathfind(self.enemy.positon, patrol_start)
+                    self.enemy.state = "patrol"
+                    self.enemy.camp_origin = None
+                    self.enemy.camp_index = 0
+                    self.enenmy.time_camped = None
+
 
     def distracted(self):
         """Distracted behavior - enemy is distracted by books"""
@@ -362,7 +425,20 @@ class EnemyBehaviors:
             if not self.enemy.player_seen_clearly:
                 # Could add a timer here before transitioning to camp
                 pass
-            
+                
+        elif self.enemy.state == "camp":
+            if not self.enemy.player_seen_clearly:
+                if not hasattr(self.enemy, "camping_time") or self.enemy.camping_time is None:
+                    self.enemy.camping_time = pygame.time.get_ticks()
+                else:
+                    if pygame.time.get_ticks() - self.enemy.camping_time > 5000: #5 seconds
+                        self.enemy.state = "patrol"
+                        self.enemy.camping_time = None
+                        self.enemy.camp_origin = None
+                        self.enemy.camp_index = 0
+                
+                
+
         # Reset detection flags after processing
         if not (self.enemy.player_seen_clearly or self.enemy.player_glimpsed or self.enemy.sound_heard):
             # No immediate threats detected
