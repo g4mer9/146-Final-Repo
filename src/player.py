@@ -100,9 +100,9 @@ class Player(pygame.sprite.Sprite):
             elif overlapping_locker and not self.locker:
                 self.enter_locker()
         else:
-            if self.trees and not overlapping_trees:
+            if self.trees:
                 self.exit_trees()
-            elif self.locker and not overlapping_locker:
+            elif self.locker:
                 self.exit_locker()
         
         # update key state for next frame
@@ -255,20 +255,24 @@ class Player(pygame.sprite.Sprite):
     
     def enter_trees(self):
         if not self.trees:
+            self.moveable = False
             self.trees = True
     
     def exit_trees(self):
         if self.trees:
+            self.moveable = True
             self.trees = False
     
     def enter_locker(self):
         if not self.locker:
             self.locker = True
+            self.moveable = False
             self.locker_animation_active = True
             self.locker_animation_timer = 0.0
     
     def exit_locker(self):
         if self.locker:
+            self.moveable = True
             self.locker = False
 
 

@@ -207,34 +207,6 @@ def get_tile_weight_fast(wall_tiles_dict, slow_tiles_dict, tile_x, tile_y):
     else:
         return 1  # Normal movement cost
 
-def remove_tiles_at_positions(tmx_data, tile_positions, target_layer_name='Walls'):
-    """Remove tiles at specific positions on the specified layer"""
-    try:
-        layer = tmx_data.get_layer_by_name(target_layer_name)
-        if layer and hasattr(layer, 'data'):
-            for tile_x, tile_y in tile_positions:
-                if (0 <= tile_y < len(layer.data) and 
-                    0 <= tile_x < len(layer.data[tile_y])):
-                    layer.data[tile_y][tile_x] = 0  # Set to empty tile
-            return True
-    except Exception as e:
-        print(f"Error removing tiles: {e}")
-    return False
-
-def restore_tiles_at_positions(tmx_data, tile_positions, tile_gid, target_layer_name='Walls'):
-    """Restore tiles at specific positions on the specified layer"""
-    try:
-        layer = tmx_data.get_layer_by_name(target_layer_name)
-        if layer and hasattr(layer, 'data'):
-            for tile_x, tile_y in tile_positions:
-                if (0 <= tile_y < len(layer.data) and 
-                    0 <= tile_x < len(layer.data[tile_y])):
-                    layer.data[tile_y][tile_x] = tile_gid  # Set to specified tile
-            return True
-    except Exception as e:
-        print(f"Error restoring tiles: {e}")
-    return False
-
 def debug_tileset(tmx_data):
     # get layers 
     print(tmx_data.layers) # get all layers 
