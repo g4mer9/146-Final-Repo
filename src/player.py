@@ -20,6 +20,8 @@ class Player(pygame.sprite.Sprite):
         self.locker = False  # flag to check if player is in a locker
         self.bottle = False  # flag to check if player has a bottle
         self.book = False  # flag to check if player has a book
+        self.key1 = False  # flag to check if player has key1 (yellow key)
+        self.key2 = False  # flag to check if player has key2 (blue key)
         self.speed_modifier = 1.0  # speed modifier for different terrain types
         
         # for tracking key presses
@@ -35,7 +37,7 @@ class Player(pygame.sprite.Sprite):
         self.locker_animation_active = False
         self.locker_animation_timer = 0.0
         self.locker_animation_duration = 0.5  # total duration for locker open animation
-        
+
 # UPDATE ===============================================================================================================================
 
     def update(self, dt, collision_rects, enemies_group=None, overlapping_trees=False, overlapping_locker=False):
@@ -46,19 +48,10 @@ class Player(pygame.sprite.Sprite):
                 self.box_animation_timer = 0.0
                 self.box_animation_stage += 1
                 
-                if self.box_animation_stage == 1:
-                    # stage 1: box_middle
-                    self.image = self.animator.box_sprites['middle']
-                    self.mask = pygame.mask.from_surface(self.image)
-                elif self.box_animation_stage == 2:
-                    # stage 2: box_closed0
-                    self.image = self.animator.box_sprites['closed0']
-                    self.mask = pygame.mask.from_surface(self.image)
-                elif self.box_animation_stage >= 3:
-                    # animation finished
+                if self.box_animation_stage >= 3:  # animation complete
                     self.box_animation_active = False
-                    self.moveable = True
-            return 0, 0, None, None, None  # no movement during animation, no bottle thrown, no book dropped, no box dropped
+                    self.box = True  # player is now in box mode
+                    self.box_animation_stage = 0
         
         # handle input and movement
         dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos = self.handle_input(dt, collision_rects, enemies_group, overlapping_trees, overlapping_locker)
@@ -74,7 +67,6 @@ class Player(pygame.sprite.Sprite):
         return dx, dy, thrown_bottle, dropped_book_pos, dropped_box_pos
     
     def handle_input(self, dt, collision_rects, enemies_group=None, overlapping_trees=False, overlapping_locker=False):
-        
         keys = pygame.key.get_pressed()
         z_key_pressed_this_frame = keys[pygame.K_z]
         z_key_just_pressed = z_key_pressed_this_frame and not self.z_key_pressed_last_frame
@@ -84,32 +76,33 @@ class Player(pygame.sprite.Sprite):
         dropped_box_pos = None
         
         # handle Z key for box, trees, locker, bottle, and book interaction
-        if z_key_just_pressed:  # only trigger on initial press, not hold
-            if overlapping_trees and not self.trees:
-                # enter trees when Z is pressed and overlapping trees
+        if z_key_just_pressed:
+            if self.box:
+                # exit box if currently in box
+                dropped_box_pos = self.exit_box(collision_rects, enemies_group)
+            elif overlapping_trees and not self.trees:
+                # enter trees
                 self.enter_trees()
             elif overlapping_locker and not self.locker:
-                # enter locker when Z is pressed and overlapping locker
+                # enter locker
                 self.enter_locker()
-            elif self.box:
-                dropped_box_pos = self.exit_box(collision_rects, enemies_group)
-            elif self.book:
-                dropped_book_pos = self.drop_book(collision_rects, enemies_group)
             elif self.bottle:
+                # throw bottle
                 thrown_bottle = self.throw_bottle()
-            
+            elif self.book:
+                # drop book
+                dropped_book_pos = self.drop_book(collision_rects, enemies_group)
         
         # handle Z key hold for trees and locker
         if z_key_pressed_this_frame:
-            if overlapping_trees and not self.trees and not self.box:
+            if overlapping_trees and not self.trees:
                 self.enter_trees()
-            elif overlapping_locker and not self.locker and not self.box:
+            elif overlapping_locker and not self.locker:
                 self.enter_locker()
         else:
-            # exit trees or locker when Z key is released
-            if self.trees:
+            if self.trees and not overlapping_trees:
                 self.exit_trees()
-            elif self.locker:
+            elif self.locker and not overlapping_locker:
                 self.exit_locker()
         
         # update key state for next frame
@@ -117,7 +110,7 @@ class Player(pygame.sprite.Sprite):
         
         # if player is not moveable, don't process movement input
         if not self.moveable:
-            return 0, 0, None, dropped_book_pos, dropped_box_pos
+            return 0, 0, thrown_bottle, dropped_book_pos, dropped_box_pos
         
         # store original position
         original_x = self.position.x
@@ -131,13 +124,13 @@ class Player(pygame.sprite.Sprite):
         current_speed = speed * self.speed_modifier
         
         if keys[pygame.K_LEFT]:
-            dx -= current_speed * dt
+            dx = -current_speed * dt
         if keys[pygame.K_RIGHT]:
-            dx += current_speed * dt
+            dx = current_speed * dt
         if keys[pygame.K_UP]:
-            dy -= current_speed * dt
+            dy = -current_speed * dt
         if keys[pygame.K_DOWN]:
-            dy += current_speed * dt
+            dy = current_speed * dt
         
         # handle collisions and update position
         self.handle_collisions(dx, dy, collision_rects, enemies_group)
@@ -155,6 +148,16 @@ class Player(pygame.sprite.Sprite):
     def set_speed_modifier(self, modifier):
         """Set the speed modifier for different terrain types"""
         self.speed_modifier = modifier
+        
+    def reset_on_death(self):
+        """Reset player flags when player dies"""
+        self.key1 = False
+        self.key2 = False
+        self.bottle = False
+        self.book = False
+        self.box = False
+        self.trees = False
+        self.locker = False
       
     def handle_collisions(self, dx, dy, collision_rects, enemies_group=None):
         """Handle player collisions using shared collision system"""
@@ -163,26 +166,17 @@ class Player(pygame.sprite.Sprite):
 
     def enter_box(self):
         """Handle player entering a box with animation sequence"""
-        if not self.box:  # only enter if not already in a box
-            self.box = True
-            self.moveable = False
+        if not self.box:
             self.box_animation_active = True
             self.box_animation_timer = 0.0
             self.box_animation_stage = 0
-            # start with box_open sprite
-            self.image = self.animator.box_sprites['open']
-            self.mask = pygame.mask.from_surface(self.image)
 
     def throw_bottle(self):
         """Throw a bottle in the direction the player is facing"""
         if self.bottle:
             self.bottle = False
-            # create a bottle projectile
-            bottle_projectile = BottleProjectile(
-                start_pos=self.position.copy(),
-                direction=self.animator.current_direction
-            )
-            return bottle_projectile
+            bottle_pos = (self.position.x, self.position.y)
+            return BottleProjectile(bottle_pos, self.animator.current_direction)
         return None
 
     def _get_drop_position_if_clear(self, collision_rects, enemy_group=None, item_name="item"):
@@ -190,11 +184,11 @@ class Player(pygame.sprite.Sprite):
         # calculate position one tile in front of player based on current direction
         drop_x, drop_y = self.position.x, self.position.y
         if self.animator.current_direction == "up":
-            drop_y -= 32
+            drop_y -= 16
         elif self.animator.current_direction == "down":
             drop_y += 16
         elif self.animator.current_direction == "left":
-            drop_x -= 32
+            drop_x -= 16
         elif self.animator.current_direction == "right":
             drop_x += 16
         
@@ -219,12 +213,11 @@ class Player(pygame.sprite.Sprite):
         if not collision_found:
             return (drop_x, drop_y)
         else:
-            print(f"Cannot drop {item_name} here - position is blocked!")
             return None
 
     def drop_book(self, collision_rects, enemy_group=None):
         """Handle player dropping a book, only if drop position is not colliding"""
-        if self.book:  # only drop if holding a book
+        if self.book:
             drop_pos = self._get_drop_position_if_clear(collision_rects, enemy_group, "book")
             if drop_pos:
                 self.book = False
@@ -233,48 +226,51 @@ class Player(pygame.sprite.Sprite):
 
     def pick_up_bottle(self):
         """Handle player picking up a bottle"""
-        if not self.bottle:  # only pick up if not already holding a bottle
+        if not self.bottle:
             self.bottle = True
 
     def grab_book(self):
         """Handle player grabbing a book"""
-        if not self.book:  # only grab if not already holding a book
+        if not self.book:
             self.book = True
 
+    def pick_up_key1(self):
+        """Handle player picking up key1 (yellow key)"""
+        if not self.key1:
+            self.key1 = True
+
+    def pick_up_key2(self):
+        """Handle player picking up key2 (blue key)"""
+        if not self.key2:
+            self.key2 = True
+
     def exit_box(self, collision_rects, enemy_group=None):
-        """Handle player exiting the box state and placing box down"""
-        if self.box:  # only exit if currently in a box
+        """Handle player exiting a box"""
+        if self.box:
             drop_pos = self._get_drop_position_if_clear(collision_rects, enemy_group, "box")
             if drop_pos:
                 self.box = False
-                # sprite will automatically switch back to normal player sprite
-                # through the animator's get_current_sprite method
                 return drop_pos
         return None
     
     def enter_trees(self):
-        if not self.trees and not self.box:  # only enter if not already in trees or box
+        if not self.trees:
             self.trees = True
-            self.moveable = False
     
     def exit_trees(self):
-        self.trees = False
-        self.moveable = True
+        if self.trees:
+            self.trees = False
     
     def enter_locker(self):
-        if not self.locker and not self.box:  # only enter if not already in locker or box
+        if not self.locker:
             self.locker = True
-            self.moveable = False
-            # trigger locker animation in the sprite we're overlapping with
             self.locker_animation_active = True
             self.locker_animation_timer = 0.0
     
     def exit_locker(self):
-        self.locker = False
-        self.moveable = True
-        # trigger locker animation when exiting as well
-        self.locker_animation_active = True
-        self.locker_animation_timer = 0.0
+        if self.locker:
+            self.locker = False
+
 
 def quit_check(running):
     keys = pygame.key.get_pressed()

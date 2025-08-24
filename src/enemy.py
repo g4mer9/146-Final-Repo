@@ -43,6 +43,7 @@ class Enemy(pygame.sprite.Sprite):
 
         # Enemy parameters
         self.hearing_range = 240
+        self.close_hearing_range = 32
         self.sight_range = 60
         self.vision_cone_angle = 90
         self.attack_range = 5

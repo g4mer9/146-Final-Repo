@@ -121,6 +121,131 @@ camera_group.center(game_player.rect.center)
 overlapping_trees = False
 overlapping_locker = False
 animating_locker_item = None
+game_won = False  # Track if the game was won
+
+# Key and lock system - store original data for respawning
+original_items_data = items_data.copy()
+removed_items = []  # Track removed items for respawning on death
+
+# Lock wall tile positions (defined by user requirements)
+lock1_wall_tiles = [(64, 69), (64, 70), (64, 71), (49, 81), (50, 81), (51, 81), (23, 82), (24, 82), (25, 82)]
+lock2_wall_tiles = [(65, 69), (65, 70), (65, 71), (49, 82), (50, 82), (51, 82)]
+removed_wall_tiles = []  # Track removed wall tiles for respawning on death
+
+# HELPER FUNCTIONS ================================================================================================================================
+
+def remove_wall_tile(tile_pos):
+    """Remove a wall tile from the map and collision system"""
+    tile_x, tile_y = tile_pos
+    
+    # Calculate the world position of the tile
+    world_x = tile_x * 16
+    world_y = tile_y * 16
+    
+    # Find and remove from collision_rects - check for any rect that overlaps with this tile position
+    global collision_rects
+    original_count = len(collision_rects)
+    collision_rects = [rect for rect in collision_rects if not (
+        rect.x <= world_x < rect.x + rect.width and 
+        rect.y <= world_y < rect.y + rect.height
+    )]
+    removed_count = original_count - len(collision_rects)
+    print(f"Removed {removed_count} collision rects for tile at ({tile_x}, {tile_y})")
+    
+    # Store for respawning
+    removed_wall_tiles.append((tile_x, tile_y, world_x, world_y))  # Store both tile and world coords
+    
+    # Remove from tmx data if possible (for visual changes)
+    try:
+        # Find the wall layer and set the tile to empty (gid = 0)
+        tile_changed = False
+        for layer in tmx_data.visible_layers:
+            if hasattr(layer, 'data') and layer.name.lower() in ['wall', 'walls', 'collision']:
+                if 0 <= tile_y < len(layer.data) and 0 <= tile_x < len(layer.data[tile_y]):
+                    layer.data[tile_y][tile_x] = 0  # Set to empty tile
+                    tile_changed = True
+                    print(f"Removed wall tile visually at ({tile_x}, {tile_y})")
+                    
+        if tile_changed:
+            # Recreate the map data and renderer completely to force immediate visual update
+            global map_data, map_layer, camera_group
+            map_data = pyscroll.TiledMapData(tmx_data)
+            
+            # Create a completely new BufferedRenderer
+            new_map_layer = pyscroll.BufferedRenderer(
+                data=map_data,
+                size=screen.get_size()
+            )
+            
+            # Update the global map_layer reference
+            map_layer = new_map_layer
+            
+            # Create a new PyscrollGroup with the new map layer
+            new_camera_group = pyscroll.PyscrollGroup(map_layer=new_map_layer, default_layer=1)
+            
+            # Transfer all sprites from old camera group to new one
+            for sprite in camera_group.sprites():
+                # Find which layer the sprite was on (this is tricky with pyscroll)
+                # We'll add them back with reasonable defaults
+                if hasattr(sprite, 'item_name'):  # items
+                    new_camera_group.add(sprite, layer=0)
+                elif sprite == game_player:  # player
+                    new_camera_group.add(sprite, layer=2)
+                else:  # enemies, projectiles, etc.
+                    new_camera_group.add(sprite, layer=1)
+            
+            # Replace the camera group
+            camera_group = new_camera_group
+            
+            # Center on player
+            camera_group.center(game_player.rect.center)
+            
+            print(f"Completely recreated camera group for tile removal at ({tile_x}, {tile_y})")
+    except Exception as e:
+        print(f"Error removing wall tile visually: {e}")
+
+def respawn_items_on_death():
+    """Respawn all removed items when player dies"""
+    global removed_items, removed_wall_tiles, collision_rects
+    
+    # Reset player flags
+    game_player.reset_on_death()
+    
+    # Respawn items
+    for item in removed_items:
+        # Create new item sprite
+        new_item = tiles.Item(
+            pos=item.rect.topleft,
+            image=item.image,
+            item_name=item.item_name,
+            tile_id=item.tile_id,
+            groups=[items_group]
+        )
+        camera_group.add(new_item, layer=0)
+    
+    # Clear removed items list
+    removed_items.clear()
+    
+    # Restore wall tiles
+    for tile_data in removed_wall_tiles:
+        if len(tile_data) == 4:  # New format: (tile_x, tile_y, world_x, world_y)
+            tile_x, tile_y, world_x, world_y = tile_data
+        else:  # Old format: (tile_x, tile_y)
+            tile_x, tile_y = tile_data
+            world_x, world_y = tile_x * 16, tile_y * 16
+        
+        # Add back to collision_rects
+        tile_rect = pygame.Rect(world_x, world_y, 16, 16)
+        collision_rects.append(tile_rect)
+        print(f"Restored collision rect for tile at ({tile_x}, {tile_y})")
+        
+        # Restore in tmx data (this would require more complex logic to restore the original gid)
+        # For now, we'll just restore collision
+    
+    # Clear removed wall tiles list
+    removed_wall_tiles.clear()
+    
+    print("Items and walls respawned on death!")
 
 # tiles.debug_tileset(tmx_data)
 
@@ -266,18 +391,17 @@ while running:
         if collision_result == "player_hit":
             # Player was hit by bullet - reset the game
             print("Player hit by bullet! Resetting game...")
-            # Reset player position and state
+            # Reset player position
             game_player.position = pygame.Vector2(player_start_pos)
             game_player.rect.center = player_start_pos
-            game_player.box = False
-            game_player.trees = False
-            game_player.locker = False
-            game_player.bottle = False
-            game_player.book = False
             game_player.moveable = True
             game_player.speed_modifier = 1.0
             game_player.box_animation_active = False
             game_player.locker_animation_active = False
+            
+            # Respawn all items and walls
+            respawn_items_on_death()
+            
             # Remove all bullets
             for b in bullet_projectiles_group:
                 camera_group.remove(b)
@@ -343,7 +467,7 @@ while running:
         bullet_projectiles_group.remove(bullet)
         camera_group.remove(bullet)
     
-    # check for item collisions (open_box, bottle, book - trees and locker handled above)
+    # check for item collisions (open_box, bottle, book, keys, locks - trees and locker handled above)
     player_rect = game_player.rect
     items_to_remove = []
     
@@ -369,6 +493,44 @@ while running:
                 game_player.grab_book()
                 # mark item for removal
                 items_to_remove.append(item)
+        elif item.item_name == 'key1':
+            if player_rect.colliderect(item.rect) and not game_player.key1:
+                print(f"Player picked up key1 (yellow key) at position ({item.rect.x}, {item.rect.y})")
+                game_player.pick_up_key1()
+                # store for respawning on death
+                removed_items.append(item)
+                items_to_remove.append(item)
+        elif item.item_name == 'key2':
+            if player_rect.colliderect(item.rect) and not game_player.key2:
+                print(f"Player picked up key2 (blue key) at position ({item.rect.x}, {item.rect.y})")
+                game_player.pick_up_key2()
+                # store for respawning on death
+                removed_items.append(item)
+                items_to_remove.append(item)
+        elif item.item_name == 'lock1':
+            if player_rect.colliderect(item.rect) and game_player.key1:
+                print(f"Player unlocked lock1 with key1 at position ({item.rect.x}, {item.rect.y})")
+                # remove lock and corresponding wall tiles
+                removed_items.append(item)
+                items_to_remove.append(item)
+                # remove wall tiles for lock1
+                for tile_pos in lock1_wall_tiles:
+                    remove_wall_tile(tile_pos)
+        elif item.item_name == 'lock2':
+            if player_rect.colliderect(item.rect) and game_player.key2:
+                print(f"Player unlocked lock2 with key2 at position ({item.rect.x}, {item.rect.y})")
+                # remove lock and corresponding wall tiles
+                removed_items.append(item)
+                items_to_remove.append(item)
+                # remove wall tiles for lock2
+                for tile_pos in lock2_wall_tiles:
+                    remove_wall_tile(tile_pos)
+        elif item.item_name == 'win':
+            if player_rect.colliderect(item.rect):
+                print(f"Player reached the win condition at position ({item.rect.x}, {item.rect.y})")
+                # End the main game loop
+                game_won = True
+                running = False
         # Note: trees and locker items are not removed, only used for overlap detection
     
     # remove items that were interacted with
@@ -409,5 +571,40 @@ while running:
 
     # FPS cap, also updates delta time for physics
     dt = clock.tick(60) / 1000
+
+# WIN SCREEN ========================================================================================================================================
+
+# Check if the game ended due to win condition
+if game_won:
+    # Win screen loop
+    win_running = True
+    win_font = pygame.font.Font(None, 48)
+    win_text = win_font.render("YOU WIN!", True, (255, 255, 255))
+    win_text_rect = win_text.get_rect(center=(screen.get_width() // 2, screen.get_height() // 2))
+    
+    instruction_font = pygame.font.Font(None, 24)
+    instruction_text = instruction_font.render("Press ESC to quit", True, (255, 255, 255))
+    instruction_rect = instruction_text.get_rect(center=(screen.get_width() // 2, screen.get_height() // 2 + 50))
+    
+    while win_running:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                win_running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    win_running = False
+        
+        # Fill screen with black
+        screen.fill((0, 0, 0))
+        
+        # Draw win text
+        screen.blit(win_text, win_text_rect)
+        screen.blit(instruction_text, instruction_rect)
+        
+        # Update display
+        pygame.display.flip()
+        
+        # Control frame rate
+        clock.tick(60)
 
 pygame.quit()
