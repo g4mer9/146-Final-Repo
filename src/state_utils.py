@@ -92,10 +92,6 @@ def transition_to_chase(enemy):
     enemy.show_state_icon("exclamation")
     enemy.player_seen_clearly = True
     enemy.last_shot_time = pygame.time.get_ticks()
-    
-    # Clear inspect cooldown when entering chase (clear sight overrides cooldown)
-    if hasattr(enemy, 'inspect_cooldown_start'):
-        enemy.inspect_cooldown_start = None
 
 
 def transition_to_patrol(enemy):
@@ -110,8 +106,3 @@ def transition_to_patrol(enemy):
         enemy.inspect_timer_start = None
     if hasattr(enemy, 'box_timer_start'):
         enemy.box_timer_start = None
-    if hasattr(enemy, 'hiding_spot_timer'):
-        enemy.hiding_spot_timer = None
-    if hasattr(enemy, 'investigating_hiding_spot'):
-        enemy.investigating_hiding_spot = None
-    # Note: Don't clear inspect_cooldown_start here as it needs to persist
