@@ -1,6 +1,7 @@
 import pygame
 import math
 from sound_system import sound_system
+from movement_utils import get_direction_vector
 
 
 class EnemySensors:
@@ -8,12 +9,20 @@ class EnemySensors:
     
     def __init__(self, enemy):
         self.enemy = enemy
+        # Track how long player has been visible for glimpse vs clear sight distinction
+        self.first_sight_time = None  # When player was first spotted
+        self.clear_sight_threshold = 0.3  # seconds before glimpse becomes clear sight (adjusted for 333ms intervals)
+        self.player_currently_visible = False
     
     def check_sight(self):
         """Check if the enemy can see the player or books"""
         self.enemy.player_seen_clearly = False
         self.enemy.player_glimpsed = False
         self.enemy.book_spotted = False
+        
+        # Track previous visibility state
+        was_visible = self.player_currently_visible
+        self.player_currently_visible = False
         
         # Check for books within sight range
         if self.enemy.items_group:
@@ -59,11 +68,17 @@ class EnemySensors:
         
         # Check if player is within sight range
         if distance_to_player > self.enemy.sight_range:
+            # Player out of range - reset visibility tracking
+            self.first_sight_time = None
+            self.player_currently_visible = False
             return
         
         # Check if player is at the exact same position (distance is zero)
         if distance_to_player < 0.1:  # very close or same position
             # Player is right on top of enemy - definitely seen clearly
+            self.player_currently_visible = True
+            if self.first_sight_time is None:
+                self.first_sight_time = pygame.time.get_ticks()
             self.enemy.player_seen_clearly = True
             self.enemy.last_known_player_position = player_pos.copy()
             return
@@ -87,26 +102,40 @@ class EnemySensors:
         if angle_diff <= self.enemy.vision_cone_angle / 2:
             # Player is in vision cone, now check for line of sight
             if self._has_line_of_sight(enemy_pos, player_pos):
-                # Player is clearly visible - check if they're hidden
+                self.player_currently_visible = True
+                
+                # Track when player was first spotted
+                current_time = pygame.time.get_ticks()
+                if self.first_sight_time is None:
+                    self.first_sight_time = current_time
+                
+                # Calculate how long player has been visible
+                visibility_duration = (current_time - self.first_sight_time) / 1000.0  # convert to seconds
+                
+                # Check if they're hidden (always counts as glimpse regardless of timer)
                 if self.enemy.player_ref.trees or self.enemy.player_ref.locker or self.enemy.player_ref.box:
                     # Player is hidden but we caught a glimpse
                     self.enemy.player_glimpsed = True
                     # Update last known position even for glimpses
                     self.enemy.last_known_player_position = (player_pos.x, player_pos.y)
                 else:
-                    # Player is clearly seen
-                    self.enemy.player_seen_clearly = True
-                    self.enemy.last_known_player_position = (player_pos.x, player_pos.y)
+                    # Player is not hidden - check visibility duration
+                    if visibility_duration >= self.clear_sight_threshold:
+                        # Player has been visible long enough - seen clearly
+                        self.enemy.player_seen_clearly = True
+                        self.enemy.last_known_player_position = (player_pos.x, player_pos.y)
+                    else:
+                        # Player visible but not long enough - just a glimpse
+                        self.enemy.player_glimpsed = True
+                        self.enemy.last_known_player_position = (player_pos.x, player_pos.y)
+        
+        # If player is not currently visible, reset the timer
+        if not self.player_currently_visible:
+            self.first_sight_time = None
     
     def _get_facing_direction(self):
         """Get the direction the enemy is currently facing as a vector"""
-        direction_map = {
-            "down": pygame.Vector2(0, 1),
-            "up": pygame.Vector2(0, -1),
-            "left": pygame.Vector2(-1, 0),
-            "right": pygame.Vector2(1, 0)
-        }
-        return direction_map.get(self.enemy.animator.current_direction, pygame.Vector2(0, 1))
+        return get_direction_vector(self.enemy.animator.current_direction)
     
     def _has_line_of_sight(self, start_pos, end_pos):
         """Check if there's a clear line of sight between two positions"""

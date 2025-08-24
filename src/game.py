@@ -33,7 +33,11 @@ locker_open_sprite = pygame.image.load('data/sprites/locker_open.png').convert_a
 dt = 0
 
 # load tileset and create pyscroll map
-tmx_data, map_data, collision_rects, items_data = tiles.load_tileset('data/tmx/untitled.tmx', 16)
+tmx_data, map_data, collision_rects, items_data, wall_tiles, slow_tiles = tiles.load_tileset('data/tmx/untitled.tmx', 16)
+
+# Get map dimensions for pathfinding bounds
+map_width = tmx_data.width
+map_height = tmx_data.height
 
 # create the scrolling map layer
 map_layer = pyscroll.BufferedRenderer(
@@ -105,7 +109,7 @@ enemy_spawn_positions = [
 
 for i, enemy_pos in enumerate(enemy_spawn_positions):
     patrol_path = enemy_patrol_paths[i] if i < len(enemy_patrol_paths) else enemy_patrol_paths[0]
-    enemy = Enemy(enemy_pos, game_player, collision_rects, patrol_path, items_group)
+    enemy = Enemy(enemy_pos, game_player, collision_rects, patrol_path, items_group, wall_tiles, slow_tiles, map_width, map_height)
     enemies_group.add(enemy)
     # add enemy to camera group on layer 1 (above items, below player)
     camera_group.add(enemy, layer=1)

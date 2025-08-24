@@ -1,6 +1,7 @@
 import pygame
 from bottle import BottleProjectile
 import player_animator
+from collision_utils import handle_full_collision
 
 speed = 100
 
@@ -156,73 +157,9 @@ class Player(pygame.sprite.Sprite):
         self.speed_modifier = modifier
       
     def handle_collisions(self, dx, dy, collision_rects, enemies_group=None):
+        """Handle player collisions using shared collision system"""
         player_size = (16, 16)
-        
-        # handle horizontal movement first
-        if dx != 0:
-            self.position.x += dx
-            player_rect = pygame.Rect(self.position.x - player_size[0]//2, 
-                                    self.position.y - player_size[1]//2, 
-                                    player_size[0], player_size[1])
-            
-            # check for horizontal collisions and find the closest valid position
-            collision_found = False
-            closest_x = self.position.x
-            
-            # check collisions with walls
-            for rect in collision_rects:
-                if player_rect.colliderect(rect):
-                    collision_found = True
-                    if dx > 0:  # moving right
-                        closest_x = min(closest_x, rect.left - player_size[0]//2)
-                    else:  # moving left
-                        closest_x = max(closest_x, rect.right + player_size[0]//2)
-            
-            # check collisions with enemies
-            if enemies_group:
-                for enemy in enemies_group:
-                    if player_rect.colliderect(enemy.rect):
-                        collision_found = True
-                        if dx > 0:  # moving right
-                            closest_x = min(closest_x, enemy.rect.left - player_size[0]//2)
-                        else:  # moving left
-                            closest_x = max(closest_x, enemy.rect.right + player_size[0]//2)
-            
-            if collision_found:
-                self.position.x = closest_x
-        
-        # handle vertical movement second
-        if dy != 0:
-            self.position.y += dy
-            player_rect = pygame.Rect(self.position.x - player_size[0]//2, 
-                                    self.position.y - player_size[1]//2, 
-                                    player_size[0], player_size[1])
-            
-            # check for vertical collisions and find the closest valid position
-            collision_found = False
-            closest_y = self.position.y
-            
-            # check collisions with walls
-            for rect in collision_rects:
-                if player_rect.colliderect(rect):
-                    collision_found = True
-                    if dy > 0:  # moving down
-                        closest_y = min(closest_y, rect.top - player_size[1]//2)
-                    else:  # moving up
-                        closest_y = max(closest_y, rect.bottom + player_size[1]//2)
-            
-            # check collisions with enemies
-            if enemies_group:
-                for enemy in enemies_group:
-                    if player_rect.colliderect(enemy.rect):
-                        collision_found = True
-                        if dy > 0:  # moving down
-                            closest_y = min(closest_y, enemy.rect.top - player_size[1]//2)
-                        else:  # moving up
-                            closest_y = max(closest_y, enemy.rect.bottom + player_size[1]//2)
-            
-            if collision_found:
-                self.position.y = closest_y
+        handle_full_collision(self.position, player_size, collision_rects, enemies_group, dx, dy)
 
     def enter_box(self):
         """Handle player entering a box with animation sequence"""

@@ -5,14 +5,22 @@ from enemy_animator import EnemyAnimator
 from enemy_behaviors import EnemyBehaviors
 from enemy_renderer import EnemyRenderer
 from enemy_sensors import EnemySensors
+from collision_utils import handle_full_collision
+from sprite_utils import load_directional_sprites, load_icon_sprites
 
 class Enemy(pygame.sprite.Sprite):
-    def __init__(self, position, player_ref, collision_rects, patrol_path=None, items_group=None):
+    def __init__(self, position, player_ref, collision_rects, patrol_path=None, items_group=None, wall_tiles=None, slow_tiles=None, map_width=0, map_height=0):
         super().__init__()
         self.position = pygame.Vector2(position)
         self.player_ref = player_ref
         self.collision_rects = collision_rects
         self.items_group = items_group
+        
+        # Store tile lookup dictionaries for efficient pathfinding
+        self.wall_tiles = wall_tiles or {}
+        self.slow_tiles = slow_tiles or {}
+        self.map_width = map_width
+        self.map_height = map_height
         
         # Initialize modular components
         self.animator = EnemyAnimator()
@@ -20,36 +28,37 @@ class Enemy(pygame.sprite.Sprite):
         self.renderer = EnemyRenderer(self)
         self.sensors = EnemySensors(self)
         
+        # Movement and pathfinding
         self.is_moving = False
-
-        # for A*
         self.path = []
         self.current_target = None
         self.tiles = None
         self.tile_size = 16
 
         # Set up patrol path
-        self.patrol_path_tiles = patrol_path or [(15, 30), (20, 30), (20, 35), (15, 35)]  # default patrol
+        self.patrol_path_tiles = patrol_path or [(15, 30), (20, 30), (20, 35), (15, 35)]
         self.patrol_index = 0
         self._convert_patrol_path_to_pixels()
-
         self.patrol_POIs = []
 
-        # ADJUSTABLE ENEMY PARAMETERS =====================================================
-        self.hearing_range = 120      # range in pixels for hearing sounds (adjustable)
-        self.sight_range = 60       # range in pixels for vision cone (adjustable)
-        self.vision_cone_angle = 90  # total angle of vision cone in degrees (adjustable)
+        # Enemy parameters
+        self.hearing_range = 240
+        self.sight_range = 60
+        self.vision_cone_angle = 90
         self.attack_range = 5
-        self.bullet_speed = 150  # increased from 15 to 150 for reasonable bullet speed
-        self.ms_between_AI_checks = 333
+        self.bullet_speed = 150
         self.last_AI_check = 0
         self.patrol_speed = 50
         self.chase_speed = 80
-        
+        self.chase_AI_interval = 1000
+        self.patrol_AI_interval = 333
+        self.inspect_AI_interval = 150
+        self.distracted_AI_interval = 2000
+
         # Shooting mechanics
-        self.shooting_cooldown = 1000  # milliseconds between shots
+        self.shooting_cooldown = 1000
         self.last_shot_time = 0
-        self.fired_bullets = []  # list to track bullets fired by this enemy
+        self.fired_bullets = []
 
         # vision and detection states
         self.player_seen_clearly = False
@@ -58,8 +67,13 @@ class Enemy(pygame.sprite.Sprite):
         self.book_spotted = False
         self.last_known_player_position = None
         self.distraction_position = None
+        
+        # Wary flags for hiding places (for inspect behavior)
+        self.wary_of_boxes = False
+        self.wary_of_trees = False
+        self.wary_of_lockers = False
 
-        # ADD NEW STATES HERE============================================================================================================================
+        # State management
         self.state = "patrol"
         self.states = {
             "patrol": self.behaviors.patrol,
@@ -68,56 +82,22 @@ class Enemy(pygame.sprite.Sprite):
             "distracted": self.behaviors.distracted,
             "camp": self.behaviors.camp
         }
-        
-        # Store dt for use in behaviors
         self.dt = 0
 
         # Icon display system for state changes
         self.show_icon = False
         self.icon_timer = 0.0
-        self.icon_duration = 0.75  # show icon for 0.75 seconds
+        self.icon_duration = 0.75
         self.current_icon = None
-        self.load_icons()
+        
+        # Load sprites and icons
+        self.sprites = load_directional_sprites("soldier")
+        icons = load_icon_sprites()
+        self.exclamation_icon = icons['exclamation']
+        self.question_icon = icons['question']
 
-        self.load_sprites()
         self.image = self.sprites["down"][0]
         self.rect = self.image.get_rect(center=self.position)
-
-    def load_sprites(self):
-        """Load enemy sprite images"""
-        self.sprites = {}
-        directions = ["down", "up", "left", "right"]
-        for direction in directions:
-            self.sprites[direction] = []
-            for i in range(2):  # soldier sprites only have 0 and 1
-                try:
-                    sprite_path = f'data/sprites/soldier_{direction}{i}.png'
-                    sprite = pygame.image.load(sprite_path).convert_alpha()
-                    self.sprites[direction].append(sprite)
-                except pygame.error as e:
-                    print(f"Warning: Could not load sprite {sprite_path}: {e}")
-                    # create a placeholder if sprite is missing
-                    placeholder = pygame.Surface((16, 16))
-                    placeholder.fill((255, 0, 255))  # magenta placeholder
-                    self.sprites[direction].append(placeholder)
-
-    def load_icons(self):
-        """Load icon sprites for state indicators"""
-        try:
-            self.exclamation_icon = pygame.image.load('data/sprites/exclamation.png').convert_alpha()
-        except pygame.error as e:
-            print(f"Warning: Could not load exclamation.png: {e}")
-            # create a placeholder if sprite is missing
-            self.exclamation_icon = pygame.Surface((16, 16))
-            self.exclamation_icon.fill((255, 0, 0))  # red placeholder
-            
-        try:
-            self.question_icon = pygame.image.load('data/sprites/question.png').convert_alpha()
-        except pygame.error as e:
-            print(f"Warning: Could not load question.png: {e}")
-            # create a placeholder if sprite is missing
-            self.question_icon = pygame.Surface((16, 16))
-            self.question_icon.fill((0, 0, 255))  # blue placeholder
 
     def show_state_icon(self, icon_type):
         """Display an icon above the enemy for a brief period"""
@@ -125,7 +105,6 @@ class Enemy(pygame.sprite.Sprite):
         self.icon_timer = 0.0
         self.current_icon = icon_type
 
-    # Delegate methods to modular components
     def draw_vision_cone(self, screen, map_layer):
         """Draw vision cone using renderer component"""
         self.renderer.draw_vision_cone(screen, map_layer)
@@ -134,86 +113,20 @@ class Enemy(pygame.sprite.Sprite):
         """Draw state icon using renderer component"""
         self.renderer.draw_state_icon(screen, map_layer)
 
-# PATHFINDING AND MOVEMENT =================================================================================================================
-
-    # implement later for A*
     def follow_path(self, dt):
-        # For now, movement is handled in patrol(), so just return the last move
+        """For now, movement is handled in patrol(), so just return the last move"""
         return 0, 0
 
     def handle_collisions(self, dx, dy):
-        """Handle enemy collisions with walls, similar to player collision handling"""
+        """Handle enemy collisions using shared collision system"""
         enemy_size = (16, 16)
+        collision_x, collision_y = handle_full_collision(
+            self.position, enemy_size, self.collision_rects, [self.player_ref], dx, dy
+        )
         
-        # Store original position in case we need to revert
-        original_x = self.position.x
-        original_y = self.position.y
-        
-        # Handle horizontal movement first
-        if dx != 0:
-            self.position.x += dx
-            enemy_rect = pygame.Rect(self.position.x - enemy_size[0]//2, 
-                                   self.position.y - enemy_size[1]//2, 
-                                   enemy_size[0], enemy_size[1])
-            
-            # Check for horizontal collisions
-            collision_found = False
-            closest_x = self.position.x
-            
-            for rect in self.collision_rects:
-                if enemy_rect.colliderect(rect):
-                    collision_found = True
-                    if dx > 0:  # moving right
-                        closest_x = min(closest_x, rect.left - enemy_size[0]//2)
-                    else:  # moving left
-                        closest_x = max(closest_x, rect.right + enemy_size[0]//2)
-            
-            # Check for player collision
-            if enemy_rect.colliderect(self.player_ref.rect):
-                collision_found = True
-                if dx > 0:  # moving right
-                    closest_x = min(closest_x, self.player_ref.rect.left - enemy_size[0]//2)
-                else:  # moving left
-                    closest_x = max(closest_x, self.player_ref.rect.right + enemy_size[0]//2)
-            
-            if collision_found:
-                self.position.x = closest_x
-                # If collision detected, skip to next patrol point
-                if self.path:
-                    self.path.pop(0)
-        
-        # Handle vertical movement second
-        if dy != 0:
-            self.position.y += dy
-            enemy_rect = pygame.Rect(self.position.x - enemy_size[0]//2, 
-                                   self.position.y - enemy_size[1]//2, 
-                                   enemy_size[0], enemy_size[1])
-            
-            # Check for vertical collisions
-            collision_found = False
-            closest_y = self.position.y
-            
-            for rect in self.collision_rects:
-                if enemy_rect.colliderect(rect):
-                    collision_found = True
-                    if dy > 0:  # moving down
-                        closest_y = min(closest_y, rect.top - enemy_size[1]//2)
-                    else:  # moving up
-                        closest_y = max(closest_y, rect.bottom + enemy_size[1]//2)
-            
-            # Check for player collision
-            if enemy_rect.colliderect(self.player_ref.rect):
-                collision_found = True
-                if dy > 0:  # moving down
-                    closest_y = min(closest_y, self.player_ref.rect.top - enemy_size[1]//2)
-                else:  # moving up
-                    closest_y = max(closest_y, self.player_ref.rect.bottom + enemy_size[1]//2)
-            
-            if collision_found:
-                self.position.y = closest_y
-                # If collision detected, skip to next patrol point
-                if self.path:
-                    self.path.pop(0)
+        # If collision detected, skip to next patrol point
+        if (collision_x or collision_y) and self.path:
+            self.path.pop(0)
         
         # Update rect position
         self.rect.center = (int(self.position.x), int(self.position.y))
@@ -264,8 +177,18 @@ class Enemy(pygame.sprite.Sprite):
         # Store dt for use in behaviors
         self.dt = dt
         
+        # Dynamic AI check interval based on state for performance optimization
+        if self.state == "chase":
+            ai_check_interval = self.chase_AI_interval
+        elif self.state == "patrol":
+            ai_check_interval = self.patrol_AI_interval
+        elif self.state == "inspect":
+            ai_check_interval = self.inspect_AI_interval
+        else:
+            ai_check_interval = self.distracted_AI_interval
+
         current_time = pygame.time.get_ticks()
-        if current_time - self.last_AI_check >= self.ms_between_AI_checks:
+        if current_time - self.last_AI_check >= ai_check_interval:
             self.last_AI_check = current_time
             # Use behaviors component for state transitions
             self.behaviors.check_transitions()

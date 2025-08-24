@@ -133,14 +133,17 @@ class BulletProjectile(pygame.sprite.Sprite):
         self.position += self.velocity * dt
         self.rect.center = (int(self.position.x), int(self.position.y))
         
-        # Check for player collision using mask collision (pixel-perfect)
+        # Check for player collision using position-based collision (works even when player sprite is hidden)
         if player_sprite:
-            # First do a quick rect collision check
-            if self.rect.colliderect(player_sprite.rect):
-                # Then do pixel-perfect collision using masks
-                offset = (player_sprite.rect.x - self.rect.x, player_sprite.rect.y - self.rect.y)
-                if self.mask.overlap(player_sprite.mask, offset):
-                    return "player_hit"  # Signal that player was hit
+            # Calculate distance between bullet and player position
+            player_pos = pygame.Vector2(player_sprite.position)
+            bullet_pos = pygame.Vector2(self.position)
+            distance = bullet_pos.distance_to(player_pos)
+            
+            # Use a collision radius (roughly the size of the player)
+            collision_radius = 12  # Adjust this value as needed for game balance
+            if distance <= collision_radius:
+                return "player_hit"  # Signal that player was hit
         
         # Check for wall collisions
         bullet_rect = pygame.Rect(self.position.x - 4, self.position.y - 4, 8, 8)

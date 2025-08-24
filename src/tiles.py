@@ -32,6 +32,10 @@ def load_tileset(filename, tile_size):
     # for tileset in tmx_data.tilesets:
     #     print(f"Tileset '{tileset.name}': firstgid={tileset.firstgid}")
     
+    # Create efficient lookup dictionaries for tile properties
+    wall_tiles = {}  # Dictionary: (tile_x, tile_y) -> True if wall
+    slow_tiles = {}  # Dictionary: (tile_x, tile_y) -> True if slow
+    
     # get all collision data once
     try:
         colliders_gen = tmx_data.get_tile_colliders()
@@ -65,6 +69,18 @@ def load_tileset(filename, tile_size):
                     gid = layer.data[y][x] if y < len(layer.data) and x < len(layer.data[y]) else 0
                     if gid > 0:
                         gids_in_layer.add(gid)
+                        
+                        # Check tile properties and populate lookup dictionaries
+                        tile_properties = tmx_data.get_tile_properties_by_gid(gid)
+                        if tile_properties:
+                            # Check for wall property
+                            if tile_properties.get('wall', False):
+                                wall_tiles[(x, y)] = True
+                            
+                            # Check for slow property  
+                            if tile_properties.get('slow', False):
+                                slow_tiles[(x, y)] = True
+                        
                         if gid in collision_lookup:
                             # process collision objects for this tile
                             for obj in collision_lookup[gid]:
@@ -128,7 +144,11 @@ def load_tileset(filename, tile_size):
     # create pyscroll map data
     map_data = pyscroll.TiledMapData(tmx_data)
     
-    return tmx_data, map_data, collision_tiles, items
+    # Print summary of loaded tile properties
+    # print(f"Wall tiles loaded: {len(wall_tiles)}")
+    # print(f"Slow tiles loaded: {len(slow_tiles)}")
+    
+    return tmx_data, map_data, collision_tiles, items, wall_tiles, slow_tiles
 
 def get_tile_id_at_position(tmx_data, x, y, tile_size=16):
     """Get the tile ID at a specific world position"""
@@ -168,6 +188,24 @@ def is_tile_slow(tmx_data, x, y, tile_size=16):
                         return True
     
     return False  # return False if no slow tile found
+
+def is_tile_slow_fast(slow_tiles_dict, tile_x, tile_y):
+    """Fast lookup for slow tiles using precomputed dictionary"""
+    return slow_tiles_dict.get((tile_x, tile_y), False)
+
+def is_tile_wall_fast(wall_tiles_dict, tile_x, tile_y):
+    """Fast lookup for wall tiles using precomputed dictionary"""
+    return wall_tiles_dict.get((tile_x, tile_y), False)
+
+def get_tile_weight_fast(wall_tiles_dict, slow_tiles_dict, tile_x, tile_y):
+    """Get movement cost for a tile position using fast lookup dictionaries"""
+    # Bounds check can be done by the caller if needed
+    if is_tile_wall_fast(wall_tiles_dict, tile_x, tile_y):
+        return float('inf')  # Walls are impassable
+    elif is_tile_slow_fast(slow_tiles_dict, tile_x, tile_y):
+        return 3  # Slow tiles have higher cost
+    else:
+        return 1  # Normal movement cost
 
 def debug_tileset(tmx_data):
     # get layers 
