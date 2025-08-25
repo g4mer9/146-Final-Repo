@@ -37,9 +37,15 @@ class BottleProjectile(pygame.sprite.Sprite):
         bottle_rect = pygame.Rect(self.position.x - 8, self.position.y - 8, 16, 16)
         for collision_rect in collision_rects:
             if bottle_rect.colliderect(collision_rect):
+                # Calculate a sound position that's offset from the wall in the direction the bottle came from
+                # This helps ensure enemies investigate on the correct side of the wall
+                offset_distance = 20  # pixels to offset from the wall
+                sound_pos_x = self.position.x - (self.velocity.x / abs(self.velocity.x) if self.velocity.x != 0 else 0) * offset_distance
+                sound_pos_y = self.position.y - (self.velocity.y / abs(self.velocity.y) if self.velocity.y != 0 else 0) * offset_distance
+                
                 # Create a sound event when bottle hits a wall
                 sound_system.add_sound(
-                    position=(self.position.x, self.position.y),
+                    position=(sound_pos_x, sound_pos_y),
                     sound_type='bottle_break',
                     range_radius=80,  # ADJUSTABLE: hearing range for bottle break
                     duration=333  # sound lasts for 333ms as specified

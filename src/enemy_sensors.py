@@ -198,5 +198,47 @@ class EnemySensors:
         for sound in sounds_in_range:
             if sound['type'] == 'bottle_break':
                 self.enemy.sound_heard = True
-                self.enemy.last_known_player_position = sound['position']
+                
+                # Find a walkable position near the sound instead of using exact break position
+                sound_pos = pygame.Vector2(sound['position'])
+                walkable_pos = self._find_walkable_investigation_target(sound_pos)
+                
+                self.enemy.last_known_player_position = walkable_pos if walkable_pos else sound['position']
                 break
+    
+    def _find_walkable_investigation_target(self, sound_pos, search_radius=2):
+        """Find a walkable position near the sound for investigation"""
+        tile_size = 16
+        sound_tile_x = int(sound_pos.x // tile_size)
+        sound_tile_y = int(sound_pos.y // tile_size)
+        
+        # First check if the sound position itself is walkable
+        if self._is_position_walkable(sound_tile_x, sound_tile_y):
+            return sound_pos
+        
+        # Try positions in expanding circles around the sound
+        for radius in range(1, search_radius + 1):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    # Skip positions not on the current radius circle
+                    if abs(dx) != radius and abs(dy) != radius:
+                        continue
+                    
+                    
+                    # Check bounds
+                    if (check_x < 0 or check_x >= self.enemy.map_width or 
+                        check_y < 0 or check_y >= self.enemy.map_height):
+                        continue
+                    
+                    # Check if tile is walkable
+                    if self._is_position_walkable(check_x, check_y):
+                        world_x = check_x * tile_size + tile_size // 2
+                        world_y = check_y * tile_size + tile_size // 2
+                        return pygame.Vector2(world_x, world_y)
+        
+        return None  # No walkable position found
+    
+    def _is_position_walkable(self, tile_x, tile_y):
+        """Check if a tile position is walkable (not a wall)"""
+        from tiles import is_tile_wall_fast
+        return not is_tile_wall_fast(self.enemy.wall_tiles, tile_x, tile_y)

@@ -96,7 +96,7 @@ def transition_to_chase(enemy):
 
 def transition_to_patrol(enemy):
     """
-    Transition enemy to patrol state with cleanup
+    Transition enemy to patrol state with cleanup and A* pathfinding back to patrol route
     """
     enemy.state = "patrol"
     enemy.last_known_player_position = None
@@ -106,3 +106,16 @@ def transition_to_patrol(enemy):
         enemy.inspect_timer_start = None
     if hasattr(enemy, 'box_timer_start'):
         enemy.box_timer_start = None
+    if hasattr(enemy, 'investigation_timer'):
+        delattr(enemy, 'investigation_timer')
+    
+    # Clear any investigation paths
+    if hasattr(enemy, 'behaviors') and hasattr(enemy.behaviors, 'current_path'):
+        enemy.behaviors.current_path = []
+    
+    # Clear current patrol path to force recalculation with A* pathfinding
+    enemy.path = []
+    
+    # Use A* pathfinding to return to patrol route (this will be called when patrol() runs)
+    # We'll set a flag to indicate this is a transition that should use pathfinding
+    enemy._returning_to_patrol = True

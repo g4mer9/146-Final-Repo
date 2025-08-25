@@ -22,13 +22,18 @@ class EnemyBehaviors:
         self.min_movement_distance = 5.0  # minimum distance to consider as "movement" 
 
     """A* with 8 directions for better agent movement"""
-    def _a_star_pathfind(self, start_position, goal_position, tile_size = 16, max_path_length=25):
+    def _a_star_pathfind(self, start_position, goal_position, tile_size = 16, max_path_length=25, debug=False):
         start_grid = (int(start_position.x // tile_size), int(start_position.y // tile_size))
         goal_grid = (int(goal_position.x // tile_size), int(goal_position.y // tile_size))
+        
+        if debug:
+            print(f"A* pathfinding from {start_grid} to {goal_grid}")
         
         # Early exit if goal is too far away (performance optimization)
         manhattan_distance = abs(start_grid[0] - goal_grid[0]) + abs(start_grid[1] - goal_grid[1])
         if manhattan_distance > max_path_length:
+            if debug:
+                print(f"Goal too far: {manhattan_distance} > {max_path_length}")
             return []  # Return empty path if too far
         
         # 8-directional movement and cost
@@ -58,14 +63,29 @@ class EnemyBehaviors:
                     continue
                 
                 # Check bounds - make sure neighbor is within map
-                if (neighbor[0] < 0 or neighbor[0] >= self.enemy.map_width or 
-                    neighbor[1] < 0 or neighbor[1] >= self.enemy.map_height):
+                # Convert map dimensions from pixels to tiles if needed
+                map_width_tiles = self.enemy.map_width // tile_size if self.enemy.map_width > 100 else self.enemy.map_width
+                map_height_tiles = self.enemy.map_height // tile_size if self.enemy.map_height > 100 else self.enemy.map_height
+                
+                if (neighbor[0] < 0 or neighbor[0] >= map_width_tiles or 
+                    neighbor[1] < 0 or neighbor[1] >= map_height_tiles):
                     continue
                 
                 # Check for diagonal corner cutting so the agents don't clip thru walls
                 if diagonal_x != 0 and diagonal_y != 0:
-                    if (self._get_tile_weight(current[0] + diagonal_x, current[1]) == float('inf') or 
-                        self._get_tile_weight(current[0], current[1] + diagonal_y) == float('inf')):
+                    # Check intermediate tiles for diagonal movement to prevent corner cutting
+                    intermediate_x = current[0] + diagonal_x
+                    intermediate_y = current[1] + diagonal_y
+                    
+                    # Ensure intermediate tiles are within bounds before checking
+                    if (0 <= intermediate_x < map_width_tiles and 0 <= intermediate_y < map_height_tiles and
+                        0 <= current[0] + diagonal_x < map_width_tiles and 0 <= current[1] + diagonal_y < map_height_tiles):
+                        
+                        if (self._get_tile_weight(current[0] + diagonal_x, current[1]) == float('inf') or 
+                            self._get_tile_weight(current[0], current[1] + diagonal_y) == float('inf')):
+                            continue
+                    else:
+                        # If intermediate tiles are out of bounds, skip this diagonal move
                         continue
                 
                 move_cost = self._get_tile_weight(neighbor[0], neighbor[1])
@@ -85,14 +105,22 @@ class EnemyBehaviors:
                 heapq.heappush(priorityqueue, (new_goal_cost + h_cost, new_goal_cost,\
                                                neighbor, path + [neighbor_pos]))
         
+        if debug:
+            print(f"A* failed to find path after expanding {nodes_expanded} nodes")
         return []
     
     # TODO: create set patrol paths depending on their spawn position instead of random
     def patrol(self):
-        """Patrol behavior - enemy follows patrol path"""
+        """Patrol behavior - enemy follows patrol path using simple direct movement"""
+        # Check if this is a transition back to patrol that needs A* pathfinding
+        use_pathfinding = getattr(self.enemy, '_returning_to_patrol', False)
+        
         # If no patrol path, use the predefined patrol path
         if not self.enemy.path:
-            self._set_next_patrol_point()
+            self._set_next_patrol_point(use_pathfinding=use_pathfinding)
+            # Clear the flag after using it
+            if hasattr(self.enemy, '_returning_to_patrol'):
+                delattr(self.enemy, '_returning_to_patrol')
         
         # Move towards the next point in the path
         if self.enemy.path:
@@ -100,35 +128,56 @@ class EnemyBehaviors:
             direction = pygame.Vector2(target) - self.enemy.position
             distance = direction.length()
             
-            # Use a smaller arrival threshold so enemies get closer to patrol points
-            arrival_threshold = 1  # decreased from 2 to 1 pixel for more precise navigation
+            # Use a smaller arrival threshold for normal patrol
+            arrival_threshold = 1  # Reasonable threshold for patrol points
             
             if distance < arrival_threshold:
                 # Arrived at this point, pop it and move to next patrol point
                 self.enemy.path.pop(0)
                 if not self.enemy.path:  # if path is empty, set next patrol point
                     self._advance_patrol_index()
-                    self._set_next_patrol_point()
+                    self._set_next_patrol_point(use_pathfinding=False)  # Normal patrol - no A*
             else:
                 direction = direction.normalize()
                 speed = self.enemy.patrol_speed  # basic patrol speed
                 move = direction * speed * self.enemy.dt
-                
-                # Add a small overshoot to help clear walls
-                # If we're close to the target, add extra momentum in the same direction
-                if distance < 20:  # when close to target
-                    overshoot_factor = 1.2  # move 20% faster to clear obstacles
-                    move *= overshoot_factor
                 
                 # Use collision handling instead of direct position update
                 self.enemy.handle_collisions(move.x, move.y)
 
     def _get_tile_weight(self, grid_x, grid_y):
         """Tile weight helper func for A* 
-        Get movement cost for a tile position using fast lookup dictionaries"""
+        Get movement cost for a tile position using fast lookup dictionaries AND collision rects"""
         # Import the fast lookup function from tiles module
         from tiles import get_tile_weight_fast
-        return get_tile_weight_fast(self.enemy.wall_tiles, self.enemy.slow_tiles, grid_x, grid_y)
+        
+        # First check the tile-based wall system
+        tile_weight = get_tile_weight_fast(self.enemy.wall_tiles, self.enemy.slow_tiles, grid_x, grid_y)
+        
+        # If already marked as wall from tile properties, return infinite weight
+        if tile_weight == float('inf'):
+            return float('inf')
+        
+        # Additionally check collision rectangles to catch walls that aren't marked with 'wall' property
+        tile_size = 16
+        tile_center_x = grid_x * tile_size + tile_size // 2
+        tile_center_y = grid_y * tile_size + tile_size // 2
+        
+        # Create a small rect representing the tile center for collision testing
+        # Use a smaller rect to avoid false positives on tile edges
+        test_rect = pygame.Rect(
+            tile_center_x - tile_size // 4,
+            tile_center_y - tile_size // 4,
+            tile_size // 2,
+            tile_size // 2
+        )
+        
+        # Check if this tile position collides with any collision rectangles
+        for collision_rect in self.enemy.collision_rects:
+            if test_rect.colliderect(collision_rect):
+                return float('inf')  # Treat collision areas as walls
+        
+        return tile_weight
 
     def _is_stuck(self, current_pos):
         """Detect if enemy is stuck (not moving for a while)"""
@@ -145,6 +194,38 @@ class EnemyBehaviors:
             self.last_position = current_pos.copy()
         
         return self.stuck_timer >= self.stuck_threshold
+
+    def _find_walkable_position_near(self, target_pos, search_radius=3):
+        """Find a walkable position near the target position"""
+        tile_size = 16
+        target_tile_x = int(target_pos.x // tile_size)
+        target_tile_y = int(target_pos.y // tile_size)
+        
+        # Try positions in expanding circles around the target
+        for radius in range(search_radius + 1):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    # Skip positions not on the current radius circle (except center)
+                    if radius > 0 and abs(dx) != radius and abs(dy) != radius:
+                        continue
+                    
+                    check_x = target_tile_x + dx
+                    check_y = target_tile_y + dy
+                    
+                    # Check bounds
+                    if (check_x < 0 or check_x >= self.enemy.map_width or 
+                        check_y < 0 or check_y >= self.enemy.map_height):
+                        continue
+                    
+                    # Check if tile is walkable
+                    tile_weight = self._get_tile_weight(check_x, check_y)
+                    if tile_weight < float('inf'):  # Walkable tile
+                        world_x = check_x * tile_size + tile_size // 2
+                        world_y = check_y * tile_size + tile_size // 2
+                        return pygame.Vector2(world_x, world_y)
+        
+        return None  # No walkable position found
+
 
     def _find_intermediate_waypoint(self, enemy_pos, player_pos):
         """Find an intermediate waypoint when direct path is blocked"""
@@ -343,7 +424,7 @@ class EnemyBehaviors:
         distance = direction.length()
         
         # Use a larger threshold to reduce micro-adjustments and path thrashing
-        arrival_threshold = 8  # Increased from 5 to 8 pixels
+        arrival_threshold = 4  # Increased from 5 to 8 pixels
         
         # Move to next waypoint if close enough
         if distance < arrival_threshold:
@@ -364,7 +445,7 @@ class EnemyBehaviors:
     
 
     def inspect(self):
-        """Inspect behavior - enemy investigates disturbances"""        
+        """Inspect behavior - enemy investigates disturbances using A* pathfinding"""        
         # If we don't have a target position, return to patrol
         if not hasattr(self.enemy, 'last_known_player_position') or self.enemy.last_known_player_position is None:
             transition_to_patrol(self.enemy)
@@ -374,31 +455,73 @@ class EnemyBehaviors:
         enemy_pos = pygame.Vector2(self.enemy.position)
         distance = target.distance_to(enemy_pos)
         
-        # If we haven't reached the target position yet, move towards it
-        if distance > 16:  # More than one tile away
-            direction = (target - enemy_pos).normalize()
-            move = direction * self.enemy.patrol_speed * self.enemy.dt
-            self.enemy.handle_collisions(move.x, move.y)
+        # Check if we're close enough to start investigation AND not currently following a path
+        investigation_distance = 24  # Increased from 16 to give more room
+        if distance <= investigation_distance and not self.current_path:
+            # Start investigation timer if not already started
+            if not hasattr(self.enemy, 'investigation_timer'):
+                self.enemy.investigation_timer = 0.0
+                print("Enemy: Arrived at investigation site. Looking around...")
+            
+            # Investigate for a brief period before concluding
+            self.enemy.investigation_timer += self.enemy.dt
+            investigation_duration = 1.0  # 1 second of investigation
+            
+            if self.enemy.investigation_timer >= investigation_duration:
+                # Investigation complete - check what's here
+                hiding_spot_type = check_hiding_spot_at_position(self.enemy.player_ref, target)
+                found_something = hiding_spot_type is not None
+                
+                # Update wary flags and check if we should chase
+                should_chase = update_wary_flags(self.enemy, hiding_spot_type, found_something)
+                
+                # Clear investigation timer and path
+                delattr(self.enemy, 'investigation_timer')
+                self.current_path = []
+                
+                if should_chase:
+                    print(f"Enemy: I already suspected {hiding_spot_type}s! Found you!")
+                    transition_to_chase(self.enemy)
+                else:
+                    if found_something:
+                        print(f"Enemy: Suspicious {hiding_spot_type}... I'll remember this.")
+                    else:
+                        print("Enemy: False alarm. Resetting suspicions.")
+                    
+                    print("Enemy: Investigation complete. Returning to patrol.")
+                    transition_to_patrol(self.enemy)
             return
         
-        # We've reached the target position - check what's here
-        hiding_spot_type = check_hiding_spot_at_position(self.enemy.player_ref, target)
-        found_something = hiding_spot_type is not None
-        
-        # Update wary flags and check if we should chase
-        should_chase = update_wary_flags(self.enemy, hiding_spot_type, found_something)
-        
-        if should_chase:
-            print(f"Enemy: I already suspected {hiding_spot_type}s! Found you!")
-            transition_to_chase(self.enemy)
-        else:
-            if found_something:
-                print(f"Enemy: Suspicious {hiding_spot_type}... I'll remember this.")
-            else:
-                print("Enemy: False alarm. Resetting suspicions.")
+        # If we haven't reached the target position yet, move towards it using A* pathfinding
+        if distance > investigation_distance or self.current_path:
+            # Use A* pathfinding to avoid walls
+            current_time = pygame.time.get_ticks()
             
-            print("Enemy: Investigation complete. Returning to patrol.")
-            transition_to_patrol(self.enemy)
+            # Only recalculate path if we don't have one or if enough time has passed
+            if (not self.current_path or 
+                current_time - getattr(self, 'last_inspect_pathfind', 0) > 2000):  # Recalculate every 2 seconds
+                
+                self.current_path = self._a_star_pathfind(enemy_pos, target, max_path_length=35)
+                self.last_inspect_pathfind = current_time
+                
+                # If A* fails, try to find a walkable position near the target
+                if not self.current_path:
+                    walkable_target = self._find_walkable_position_near(target)
+                    if walkable_target:
+                        self.current_path = self._a_star_pathfind(enemy_pos, walkable_target, max_path_length=35)
+                        print(f"Enemy: Original target unreachable, investigating nearby position instead")
+                    else:
+                        print(f"Enemy: Cannot find path to investigation target, using direct movement")
+            
+            # Follow the path if we have one
+            if self.current_path:
+                self._follow_path(enemy_pos)
+            else:
+                # Fallback to direct movement if A* completely fails
+                direction = (target - enemy_pos).normalize()
+                move = direction * self.enemy.patrol_speed * self.enemy.dt
+                self.enemy.handle_collisions(move.x, move.y)
+            return
 
 
     # when camp ends, A* needs to be called from current pos to start of set patrol path
@@ -501,11 +624,35 @@ class EnemyBehaviors:
         
         return bullet
     
-    def _set_next_patrol_point(self):
-        """Set the next patrol point as the current path destination"""
+    def _set_next_patrol_point(self, use_pathfinding=False):
+        """Set the next patrol point as the current path destination
+        
+        Args:
+            use_pathfinding: If True, use A* pathfinding to reach the patrol point.
+                           If False, use direct movement (normal patrol behavior)
+        """
         if hasattr(self.enemy, 'patrol_path_pixels') and self.enemy.patrol_path_pixels:
             next_point = self.enemy.patrol_path_pixels[self.enemy.patrol_index]
-            self.enemy.path = [next_point]
+            
+            if use_pathfinding:
+                # Use A* pathfinding when transitioning back to patrol (e.g., after investigation)
+                next_point_vec = pygame.Vector2(next_point)
+                enemy_pos = pygame.Vector2(self.enemy.position)
+                
+                # Use A* pathfinding to get to the next patrol point
+                self.current_path = self._a_star_pathfind(enemy_pos, next_point_vec, max_path_length=50)
+                
+                if self.current_path:
+                    # Convert A* path to the format expected by enemy.path
+                    self.enemy.path = [(pos.x, pos.y) for pos in self.current_path]
+                    print(f"Enemy: Using A* pathfinding to return to patrol point")
+                else:
+                    # Fallback to direct path if A* fails
+                    print(f"Enemy: A* failed for patrol transition, using direct movement")
+                    self.enemy.path = [next_point]
+            else:
+                # Normal patrol behavior - direct movement to patrol point
+                self.enemy.path = [next_point]
         else:
             # Fallback to a default point if no patrol path is set
             self.enemy.path = [(self.enemy.position.x + 32, self.enemy.position.y)]
@@ -551,6 +698,8 @@ class EnemyBehaviors:
             elif self.enemy.player_glimpsed or self.enemy.sound_heard:
                 self.enemy.state = "inspect"
                 self.enemy.show_state_icon("question")
+                # Clear any existing path to force new pathfinding
+                self.current_path = []
                 if self.enemy.player_glimpsed:
                     print("Enemy: Caught a glimpse of something - investigating...")
                 if self.enemy.sound_heard:
