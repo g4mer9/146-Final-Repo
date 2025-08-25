@@ -224,6 +224,8 @@ class EnemySensors:
                     if abs(dx) != radius and abs(dy) != radius:
                         continue
                     
+                    check_x = sound_tile_x + dx
+                    check_y = sound_tile_y + dy
                     
                     # Check bounds
                     if (check_x < 0 or check_x >= self.enemy.map_width or 
