@@ -456,7 +456,7 @@ class EnemyBehaviors:
         distance = target.distance_to(enemy_pos)
         
         # Check if we're close enough to start investigation AND not currently following a path
-        investigation_distance = 24  # Increased from 16 to give more room
+        investigation_distance = 40  # Increased from 16 to give more room
         if distance <= investigation_distance and not self.current_path:
             # Start investigation timer if not already started
             if not hasattr(self.enemy, 'investigation_timer'):
@@ -526,54 +526,55 @@ class EnemyBehaviors:
 
     # when camp ends, A* needs to be called from current pos to start of set patrol path
     def camp(self):
-        """Camp behavior - enemy stays at last known player location"""
-        # Placeholder: enemy stands still when camping
-        # TODO: Implement camping behavior with occasional turning/looking around
-        # TODO: Add timer to return to patrol after losing player for too long
-        #chase from where camping if player seen
+        """Camp behavior - enemy turns around between all 4 directions 4 times per second"""
+        # Chase from where camping if player seen
         if self.enemy.player_seen_clearly:
             self.enemy.state = "chase"
             self.enemy.show_state_icon("exclamation")
             self.enemy.last_shot_time = pygame.time.get_ticks()
             return
-        if not hasattr(self.enemy, 'camp_origin') or self.enemy.camp_origin is None:
-            self.enemy.camp_origin = pygame.Vector2(self.enemy.position)
-            self.enemy.camp_index = 0
-            self.enemy.time_camped = None
+            
+        # Initialize camp variables
+        if not hasattr(self.enemy, 'camp_timer'):
+            self.enemy.camp_timer = 0.0
+            self.enemy.camp_direction_index = 0
+            self.enemy.total_camp_time = 0.0
         
-        #stop in tracks when lose sight of player and paces the area
-        pacing = [
-                pygame.Vector2(0 -80),
-                pygame.Vector2(0, 80),
-                pygame.Vector2(-80,0),
-                pygame.Vector2(80,0),
-            ]
-
-        target = self.enemy.camp_origin + pacing[self.enemy.camp_index]
-        enemy_pos = pygame.Vector2(self.enemy.position)
-        direction = target - enemy_pos
-        distance = direction.length()
-
-        if distance > 1:
-            direction = direction.normalize()
-            speed = self.enemy.patrol_speed
-            move = direction * speed * self.enemy.dt
-            self.enemy.handle_collisions(move.x, move.y)
-        else:
-            self.enemy.camp_index += 1
-            if self.enemy.camp_index >= len(pacing):
-                self.enemy.time_camped = pygame.time.get_ticks()
+        # Update timers
+        self.enemy.camp_timer += self.enemy.dt
+        self.enemy.total_camp_time += self.enemy.dt
         
-        if self.enemy.camp_index >= len(pacing):
-            if self.enemy.time_camped is not None:
-
-                if pygame.time.get_ticks() - self.enemy.time_camped > 10000:
-                    patrol_start = pygame.Vector2(self.enemy.patrol_path_pixels[0])
-                    self.current_path = self._a_star_pathfind(self.enemy.positon, patrol_start)
-                    self.enemy.state = "patrol"
-                    self.enemy.camp_origin = None
-                    self.enemy.camp_index = 0
-                    self.enenmy.time_camped = None
+        # Turn around between all 4 directions 4 times per second
+        # Each direction lasts for 0.25 seconds (1/4 second)
+        direction_duration = 0.5
+        
+        if self.enemy.camp_timer >= direction_duration:
+            self.enemy.camp_timer = 0.0
+            self.enemy.camp_direction_index = (self.enemy.camp_direction_index + 1) % 4
+        
+        # Define the 4 cardinal directions (1 pixel movement each)
+        directions = [
+            pygame.Vector2(0, -1),  # Up
+            pygame.Vector2(1, 0),   # Right
+            pygame.Vector2(0, 1),   # Down
+            pygame.Vector2(-1, 0)   # Left
+        ]
+        
+        # Move 1 pixel in the current direction
+        move_direction = directions[self.enemy.camp_direction_index]
+        self.enemy.handle_collisions(move_direction.x, move_direction.y)
+        
+        # Return to patrol after camping for 10 seconds
+        if self.enemy.total_camp_time > 10.0:
+            if hasattr(self.enemy, 'patrol_path_pixels') and self.enemy.patrol_path_pixels:
+                patrol_start = pygame.Vector2(self.enemy.patrol_path_pixels[0])
+                self.current_path = self._a_star_pathfind(self.enemy.position, patrol_start)
+            
+            self.enemy.state = "patrol"
+            # Clear camp variables
+            delattr(self.enemy, 'camp_timer')
+            delattr(self.enemy, 'camp_direction_index')
+            delattr(self.enemy, 'total_camp_time')
 
 
     def distracted(self):
